@@ -1,0 +1,217 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  --bg: #07090f;
+  --bg-soft: #0b0e16;
+  --panel: rgba(255, 255, 255, 0.03);
+  --panel-strong: rgba(255, 255, 255, 0.055);
+  --border: rgba(148, 163, 184, 0.14);
+  --border-bright: rgba(74, 222, 128, 0.35);
+  --text: #e2e8f0;
+  --text-dim: #8b93a7;
+  --text-faint: #565d6f;
+  --accent: #4ade80;
+  --accent-dim: #22c55e;
+  --accent-ink: #052e12;
+  --cyan: #22d3ee;
+  --amber: #fbbf24;
+  --red: #f87171;
+  --violet: #a78bfa;
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100%;
+}
+
+body {
+  background-image:
+    radial-gradient(1100px 500px at 15% -10%, rgba(34, 197, 94, 0.07), transparent 60%),
+    radial-gradient(900px 480px at 95% -5%, rgba(34, 211, 238, 0.05), transparent 55%),
+    linear-gradient(rgba(148, 163, 184, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.035) 1px, transparent 1px);
+  background-size: 100% 100%, 100% 100%, 44px 44px, 44px 44px;
+  background-attachment: fixed;
+}
+
+::selection {
+  background: rgba(74, 222, 128, 0.28);
+}
+
+/* ---------- components ---------- */
+@layer components {
+  .panel {
+    @apply rounded-xl border;
+    background: var(--panel);
+    border-color: var(--border);
+    backdrop-filter: blur(6px);
+  }
+  .panel-title {
+    @apply mb-1 flex items-center gap-2 text-sm font-semibold tracking-wide;
+    color: var(--text);
+  }
+  .panel-title .dot {
+    @apply inline-block h-2 w-2 rounded-full;
+    background: var(--accent);
+    box-shadow: 0 0 8px var(--accent);
+  }
+  .field-label {
+    @apply mb-1.5 block text-xs font-medium tracking-wide;
+    color: var(--text-dim);
+  }
+  .input {
+    @apply w-full rounded-lg border px-3 py-2 text-sm outline-none transition;
+    background: rgba(2, 6, 17, 0.6);
+    border-color: var(--border);
+    color: var(--text);
+  }
+  .input:focus {
+    border-color: var(--border-bright);
+    box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.12);
+  }
+  .input::placeholder {
+    color: var(--text-faint);
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition active:scale-[0.98];
+  }
+  .btn-primary {
+    background: linear-gradient(180deg, #4ade80, #22c55e);
+    color: var(--accent-ink);
+    box-shadow: 0 2px 14px rgba(34, 197, 94, 0.28);
+  }
+  .btn-primary:hover {
+    box-shadow: 0 2px 20px rgba(34, 197, 94, 0.45);
+    filter: brightness(1.06);
+  }
+  .btn-ghost {
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    background: rgba(255, 255, 255, 0.02);
+  }
+  .btn-ghost:hover {
+    color: var(--text);
+    border-color: var(--border-bright);
+  }
+  .chip {
+    @apply inline-flex items-center gap-1 rounded-md px-2 py-0.5 font-mono text-xs;
+    background: rgba(74, 222, 128, 0.1);
+    color: var(--accent);
+    border: 1px solid rgba(74, 222, 128, 0.22);
+  }
+  .chip-cyan {
+    background: rgba(34, 211, 238, 0.09);
+    color: var(--cyan);
+    border-color: rgba(34, 211, 238, 0.22);
+  }
+  .chip-amber {
+    background: rgba(251, 191, 36, 0.09);
+    color: var(--amber);
+    border-color: rgba(251, 191, 36, 0.25);
+  }
+  .chip-red {
+    background: rgba(248, 113, 113, 0.09);
+    color: var(--red);
+    border-color: rgba(248, 113, 113, 0.25);
+  }
+  .chip-violet {
+    background: rgba(167, 139, 250, 0.09);
+    color: var(--violet);
+    border-color: rgba(167, 139, 250, 0.25);
+  }
+  .output {
+    @apply rounded-lg px-3 py-2 font-mono text-sm break-all;
+    background: rgba(2, 6, 17, 0.7);
+    border: 1px solid var(--border);
+    color: var(--accent);
+    text-shadow: 0 0 10px rgba(74, 222, 128, 0.25);
+  }
+  .kv {
+    @apply flex items-center justify-between gap-3 rounded-lg px-3 py-2 font-mono text-sm;
+    background: rgba(2, 6, 17, 0.5);
+    border: 1px solid var(--border);
+  }
+  .kv .k {
+    color: var(--text-dim);
+  }
+  .kv .v {
+    color: var(--text);
+    font-weight: 500;
+  }
+  .hint {
+    @apply text-xs leading-relaxed;
+    color: var(--text-faint);
+  }
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+/* 顶部导航链接 */
+.navlink {
+  color: var(--text-dim);
+  transition: color 0.15s ease, background 0.15s ease;
+  border-radius: 8px;
+}
+.navlink:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* 矩阵表格 cell */
+.grid-cell {
+  @apply flex items-center justify-center font-mono text-sm;
+  min-width: 2.1rem;
+  height: 2.1rem;
+  border: 1px solid var(--border);
+  background: rgba(2, 6, 17, 0.45);
+  color: var(--text);
+  border-radius: 6px;
+}
+.grid-cell.hl {
+  border-color: var(--border-bright);
+  color: var(--accent);
+  background: rgba(74, 222, 128, 0.08);
+  box-shadow: 0 0 8px rgba(74, 222, 128, 0.12) inset;
+}
+.grid-cell.head {
+  color: var(--cyan);
+  border-color: rgba(34, 211, 238, 0.3);
+  background: rgba(34, 211, 238, 0.06);
+}
+
+/* 字节差异对比 */
+.byte-diff {
+  @apply inline-flex h-6 w-6 items-center justify-center rounded font-mono text-[11px];
+  background: rgba(2, 6, 17, 0.55);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+}
+.byte-diff.same {
+  color: #64748b;
+}
+.byte-diff.diff {
+  color: #0a0f0a;
+  background: linear-gradient(180deg, #fbbf24, #f59e0b);
+  border-color: #f59e0b;
+  box-shadow: 0 0 10px rgba(251, 191, 36, 0.35);
+  font-weight: 700;
+}
+
+/* 步骤时间线 */
+.step-line {
+  @apply relative rounded-lg border px-3 py-2.5;
+  background: rgba(2, 6, 17, 0.4);
+  border-color: var(--border);
+}
+.step-line::before {
+  content: "";
+  @apply absolute left-0 top-0 h-full w-[3px] rounded-l-lg;
+  background: linear-gradient(180deg, var(--accent), rgba(34, 197, 94, 0.15));
+}
