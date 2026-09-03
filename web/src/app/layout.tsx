@@ -11,6 +11,10 @@ const NAV = [
   { href: "/", label: "总览", exact: true },
   { href: "/polybius", label: "Polybius 方阵" },
   { href: "/transposition", label: "列置换" },
+  { href: "/rc4", label: "RC4 流密码" },
+  { href: "/ca", label: "CA 元胞自动机" },
+  { href: "/des", label: "DES 数据加密" },
+  { href: "/aes", label: "AES 高级加密" },
   { href: "/md5", label: "MD5" },
   { href: "/dh", label: "Diffie-Hellman" },
 ];

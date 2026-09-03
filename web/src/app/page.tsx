@@ -37,6 +37,42 @@ const LABS = [
     tag: "公钥密码",
     color: "#fbbf24",
   },
+  {
+    href: "/rc4",
+    no: "Lab 05",
+    title: "RC4 流密码",
+    en: "RC4 Stream Cipher",
+    desc: "经典流密码：KSA 密钥调度 + PRGA 伪随机生成，密钥流与明文逐字节异或。可视化 256 字节 S 盒与 PRGA 步进，内置 RFC 6229 官方向量自检。",
+    tag: "流密码",
+    color: "#38bdf8",
+  },
+  {
+    href: "/ca",
+    no: "Lab 06",
+    title: "CA 元胞自动机流密码",
+    en: "Cellular Automata Stream Cipher",
+    desc: "用一维元胞自动机生成密钥流：SHA-256 密钥派生 → 64 细胞初始态 → 预热演化。支持 Rule 30/90/110/150 切换，时空演化图逐行可视。",
+    tag: "流密码",
+    color: "#a3e635",
+  },
+  {
+    href: "/des",
+    no: "Lab 07",
+    title: "DES 数据加密标准",
+    en: "Data Encryption Standard",
+    desc: "首个广泛采用的现代分组密码：64-bit 分组、56-bit 密钥、16 轮 Feistel 网络。逐轮展示子密钥与轮函数，附变异 S-box 雪崩对照实验。",
+    tag: "分组密码",
+    color: "#fb923c",
+  },
+  {
+    href: "/aes",
+    no: "Lab 08",
+    title: "AES 高级加密标准",
+    en: "Advanced Encryption Standard",
+    desc: "现行对称加密标准（FIPS 197）：128-bit 分组、10 轮、四步轮函数。逐轮状态 4×4 扩散可视化 + 单比特雪崩轨迹，通过 FIPS-197 官方向量验证。",
+    tag: "分组密码",
+    color: "#e879f9",
+  },
 ];
 
 export default function Home() {
@@ -55,7 +91,7 @@ export default function Home() {
           </span>
         </h1>
         <p className="mx-auto mt-5 max-w-2xl text-base leading-relaxed" style={{ color: "var(--text-dim)" }}>
-          从古典的纸笔密码到现代哈希与密钥交换，四个实验覆盖密码学演进的主线。
+          从古典的纸笔密码到现代哈希、公钥密钥交换与对称加密，八个实验覆盖密码学演进的主线。
           每个演示都提供输入交互、过程可视化和逐步演算，帮助理解算法「为什么这样设计」。
         </p>
       </section>

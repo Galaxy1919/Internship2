@@ -39,3 +39,14 @@ export function bitDiff(a: Uint8Array, b: Uint8Array): number {
 
 export const bitRatio = (a: Uint8Array, b: Uint8Array): number =>
   bitDiff(a, b) / (Math.min(a.length, b.length) * 8 || 1);
+
+// 把任意文本规范为 n 字节密钥：
+// 纯 hex（长度恰为 2n）按 hex 解码；其余情况按 UTF-8 编码后截断/补零到 n 字节。
+export function keyBytesFromText(text: string, n: number): Uint8Array {
+  const t = text.trim();
+  if (new RegExp(`^[0-9a-fA-F]{${2 * n}}$`).test(t)) return hexToBytes(t);
+  const b = encoder.encode(text);
+  const out = new Uint8Array(n);
+  out.set(b.slice(0, n));
+  return out;
+}
