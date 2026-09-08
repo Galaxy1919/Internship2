@@ -33,6 +33,3 @@ received/
 ClassicalCiphers/PolyalphabeticSubstitution/autokey
 ClassicalCiphers/Transposition/dt
 publicKey/SM2/sm2_cli
-publicKey/SM2/test/bn_test
-publicKey/SM2/test/sm2_test
-publicKey/SM2/test/sm3_test
