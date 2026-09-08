@@ -6,7 +6,7 @@ from pathlib import Path
 from dh_socket_common import (
     P, G, public_value, shared_secret, derive_material,
     send_frame, recv_frame, decrypt_message, transcript_hash,
-    recv_file_chunks,
+    recv_file_chunks, TRANSPORT_CIPHERS,
 )
 from cipher_registry import (
     get as get_cipher,
@@ -34,9 +34,12 @@ def serve(host="127.0.0.1", port=29090, once=True):
                 hello = recv_frame(conn)
                 if hello.get("type") != "dh_hello" or hello.get("p") != P or hello.get("g") != G:
                     raise ValueError("DH 公共参数不一致")
+                transport = hello.get("transport", "aes")
+                if transport not in TRANSPORT_CIPHERS:
+                    raise ValueError(f"不支持的传输密码: {transport}")
                 alice_public = int(hello["public"])
                 secret = shared_secret(alice_public, BOB_PRIVATE)
-                aes_key, mac_key = derive_material(secret)
+                tkey, mac_key = derive_material(secret, transport)
                 session = transcript_hash(alice_public, bob_public)
                 send_frame(conn, {"type": "dh_reply", "public": bob_public, "session": session})
 
@@ -48,10 +51,11 @@ def serve(host="127.0.0.1", port=29090, once=True):
                     t = packet.get("type")
 
                     if t == "encrypted_message":
-                        plaintext = decrypt_message(packet, aes_key, mac_key)
+                        plaintext = decrypt_message(packet, tkey, mac_key, transport)
                         print(f"CLIENT {address[0]}:{address[1]}")
                         print(f"DH_SHARED {secret}")
                         print(f"SESSION {session}")
+                        print(f"TRANSPORT {transport}")
                         print(f"PLAINTEXT {plaintext}")
                         send_frame(conn, {"type": "ack", "session": session, "status": "PASS"})
                         break
@@ -60,14 +64,15 @@ def serve(host="127.0.0.1", port=29090, once=True):
                         filename = Path(packet.get("filename", "unnamed")).name
                         encrypted = bool(packet.get("encrypted", True))
                         data = recv_file_chunks(conn,
-                                                aes_key if encrypted else None,
-                                                mac_key if encrypted else None)
+                                                tkey if encrypted else None,
+                                                mac_key if encrypted else None, transport)
                         OUT_DIR.mkdir(exist_ok=True)
                         out_path = OUT_DIR / filename
                         out_path.write_bytes(data)
                         print(f"CLIENT {address[0]}:{address[1]}")
                         print(f"DH_SHARED {secret}")
                         print(f"SESSION {session}")
+                        print(f"TRANSPORT {transport}")
                         print(f"FILE {filename}")
                         print(f"FILE_SIZE {len(data)}")
                         print(f"FILE_SAVED {out_path}")
@@ -76,7 +81,7 @@ def serve(host="127.0.0.1", port=29090, once=True):
                         break
 
                     elif t == "cipher_message":
-                        envelope = json.loads(decrypt_message(packet, aes_key, mac_key))
+                        envelope = json.loads(decrypt_message(packet, tkey, mac_key, transport))
                         cipher = get_cipher(envelope["cipher"])
                         key = bytes.fromhex(envelope["key"])
                         payload = bytes.fromhex(envelope["payload"])
@@ -84,6 +89,7 @@ def serve(host="127.0.0.1", port=29090, once=True):
                         print(f"CLIENT {address[0]}:{address[1]}")
                         print(f"DH_SHARED {secret}")
                         print(f"SESSION {session}")
+                        print(f"TRANSPORT {transport}")
                         print(f"CIPHER {cipher['label']}")
                         print(f"PLAINTEXT {plaintext}")
                         send_frame(conn, {"type": "ack", "session": session, "status": "PASS"})
@@ -103,23 +109,25 @@ def serve(host="127.0.0.1", port=29090, once=True):
                             raise ValueError("收到 pubkey_message 但未先收到 pubkey_request")
                         cipher_id, priv = pubkey_priv
                         pub = get_pubkey(cipher_id)
-                        ct = bytes.fromhex(decrypt_message(packet, aes_key, mac_key))
+                        ct = bytes.fromhex(decrypt_message(packet, tkey, mac_key, transport))
                         plaintext = pub["decrypt"](ct, priv).decode("utf-8", errors="replace")
                         print(f"CLIENT {address[0]}:{address[1]}")
                         print(f"DH_SHARED {secret}")
                         print(f"SESSION {session}")
+                        print(f"TRANSPORT {transport}")
                         print(f"CIPHER {pub['label']}")
                         print(f"PLAINTEXT {plaintext}")
                         send_frame(conn, {"type": "ack", "session": session, "status": "PASS"})
                         break
 
                     elif t == "digest_verify":
-                        env = json.loads(decrypt_message(packet, aes_key, mac_key))
+                        env = json.loads(decrypt_message(packet, tkey, mac_key, transport))
                         recomputed = md5_hex(env["message"].encode("utf-8"))
                         match = recomputed == env["digest"]
                         print(f"CLIENT {address[0]}:{address[1]}")
                         print(f"DH_SHARED {secret}")
                         print(f"SESSION {session}")
+                        print(f"TRANSPORT {transport}")
                         print(f"DIGEST {env['digest']}")
                         print(f"DIGEST_RECOMPUTED {recomputed}")
                         print(f"DIGEST_MATCH {'PASS' if match else 'FAIL'}")
@@ -135,6 +143,7 @@ def serve(host="127.0.0.1", port=29090, once=True):
                         print(f"CLIENT {address[0]}:{address[1]}")
                         print(f"DH_SHARED {secret}")
                         print(f"SESSION {session}")
+                        print(f"TRANSPORT {transport}")
                         print(f"ECDH_SHARED {SB[0]:x}")
                         break
 
