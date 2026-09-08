@@ -6,3 +6,18 @@ __pycache__/
 *.py[cod]
 .venv/
 venv/
+
+# macOS 系统文件
+.DS_Store
+._*
+.AppleDouble
+.LSOverride
+
+# Windows 系统文件
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# 编辑器 / 临时文件
+*.swp
+*~
