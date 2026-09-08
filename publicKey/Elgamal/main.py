@@ -236,6 +236,16 @@ def verify(msg: bytes, sig: Tuple[int, int], pub: Tuple[int, int, int]) -> bool:
 # 创新点:k 重用攻击
 # ---------------------------------------------------------------------------
 
+def _solve_linear_congruence(a: int, b: int, n: int) -> List[int]:
+    """解 a·k ≡ b (mod n),返回模 n 意义下的全部解。"""
+    g, u, _ = _egcd(a % n, n)
+    if b % g != 0:
+        return []
+    m = n // g
+    k0 = ((b // g) * (u % m)) % m
+    return [k0 + t * m for t in range(g)]
+
+
 def recover_x_from_reused_k(
     msg1: bytes,
     sig1: Tuple[int, int],
@@ -252,16 +262,30 @@ def recover_x_from_reused_k(
 
     因此攻击者只需两个复用同一 k 的签名,即可恢复私钥 x。
     """
-    p, g, _ = pub
+    p, g, y = pub
     r1, s1 = sig1
     r2, s2 = sig2
     if r1 != r2:
         raise ValueError("两次签名的 r 不同,说明 k 未复用;此攻击不适用")
+    # 安全素数 p = 2q + 1,生成元 g 的阶为 q。签名等式
+    #   s = k^{-1}(h - x·r) (mod p-1)
+    # 两边取模 q 后依然成立,而 g 的周期是 q,所以攻击方程
+    #   k·(s1 - s2) ≡ (h1 - h2) (mod q)
+    # 必须解在模 q 下才有唯一意义(模 p-1 下因 2 因子会引入伪解)。
+    n = (p - 1) // 2
     h1 = _h(msg1, p)
     h2 = _h(msg2, p)
-    k = ((h1 - h2) * modinv((s1 - s2) % (p - 1), p - 1)) % (p - 1)
-    x = ((h1 - k * s1) * modinv(r1, p - 1)) % (p - 1)
-    return x
+    cands = _solve_linear_congruence((s1 - s2) % n, (h1 - h2) % n, n)
+    for k in cands:
+        if k <= 0 or pow(g, k, p) != r1:
+            continue
+        try:
+            x = ((h1 - k * s1) % n * modinv(r1 % n, n)) % n
+        except ValueError:
+            continue
+        if 0 < x < n and pow(g, x, p) == y:
+            return x
+    raise ValueError("k 重用攻击恢复失败:未找到合法私钥")
 
 
 # ---------------------------------------------------------------------------

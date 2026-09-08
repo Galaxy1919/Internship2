@@ -29,7 +29,7 @@ MD5(Message-Digest Algorithm 5,RFC 1321)把任意长度的消息压缩成
       Round 3 (32-47): H(x,y,z) = x ^ y ^ z
       Round 4 (48-63): I(x,y,z) = y ^ (x | ~z)
 
-   每一步:a = b + leftrotate(a + Func(b,c,d) + M[k] + T[i], s)
+   每一步:a = b + left_rotate(a + Func(b,c,d) + M[k] + T[i], s)
    其中 T[i] = floor(2^32 * abs(sin(i+1))),s 为该步的循环左移量。
    一块处理完后,把 A/B/C/D 累加回全局状态。
 
@@ -79,7 +79,7 @@ MASK32 = 0xFFFFFFFF
 # 核心算法
 # ---------------------------------------------------------------------------
 
-def leftrotate(x: int, n: int) -> int:
+def left_rotate(x: int, n: int) -> int:
     """32 位循环左移。"""
     x &= MASK32
     return ((x << n) | (x >> (32 - n))) & MASK32
@@ -118,8 +118,8 @@ def process_block(state: tuple, block: bytes) -> tuple:
 
         f &= MASK32
         temp = (a + f + T[i] + M[g]) & MASK32
-        # a <- d, d <- c, c <- b, b <- b + leftrotate(temp, S[i])
-        a, d, c, b = d, c, b, (b + leftrotate(temp, S[i])) & MASK32
+        # a <- d, d <- c, c <- b, b <- b + left_rotate(temp, S[i])
+        a, d, c, b = d, c, b, (b + left_rotate(temp, S[i])) & MASK32
 
     return (
         (state[0] + a) & MASK32,

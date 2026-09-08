@@ -65,7 +65,7 @@ def prga(S: list, n: int) -> bytes:
         i = (i + 1) & 0xFF
         j = (j + S[i]) & 0xFF
         S[i], S[j] = S[j], S[i]
-        keystream.append(S[(S[i] + S[j]) & 0xFF])
+        keystream.append(S[(S[i] + S[j]) & 0xFF]) # 将S[ S[i]+S[j] mod 256 ]的值作为轮密钥
     return bytes(keystream)
 
 

@@ -73,6 +73,60 @@ const LABS = [
     tag: "分组密码",
     color: "#e879f9",
   },
+  {
+    href: "/playfair",
+    no: "Lab 09",
+    title: "Playfair 双字母密码",
+    en: "Playfair Cipher",
+    desc: "第一种多图替代密码：5×5 密钥方阵 + 双字母组几何替换（同行右移 / 同列下移 / 矩形换列）。逐组展开规则与坐标轨迹，通过 Wikipedia 经典向量自检。",
+    tag: "古典密码",
+    color: "#2dd4bf",
+  },
+  {
+    href: "/elgamal",
+    no: "Lab 10",
+    title: "ElGamal 加密与签名",
+    en: "ElGamal Public-Key Cryptosystem",
+    desc: "基于离散对数难题的公钥方案：安全素数 p=2q+1 密钥生成、随机化加密、签名验证。含创新演示——两次签名复用同一 k 时攻击者如何恢复出私钥 x。",
+    tag: "公钥密码",
+    color: "#f87171",
+  },
+  {
+    href: "/vigenere",
+    no: "Lab 11",
+    title: "Vigenère 与 Autokey",
+    en: "Polyalphabetic Substitution",
+    desc: "多表替代三种变体：Vigenère 密钥周期重复、Autokey-明文、Autokey-密文。内置 Friedman 列重合指数检验——直观看到 Vigenère 在真实密钥长度处出现 IC 峰值而 Autokey 没有。",
+    tag: "古典密码",
+    color: "#f472b6",
+  },
+  {
+    href: "/rsa",
+    no: "Lab 12",
+    title: "RSA 公钥密码",
+    en: "RSA Public-Key Cryptosystem",
+    desc: "基于大整数分解难题：Miller-Rabin 素性检测逐步见证、扩展欧几里得求私钥、CRT 加速解密对比，以及低指数攻击演示——e=3 小明文直接开立方破译。",
+    tag: "公钥密码",
+    color: "#60a5fa",
+  },
+  {
+    href: "/ecc",
+    no: "Lab 13",
+    title: "ECC 椭圆曲线密码",
+    en: "Elliptic Curve Cryptography",
+    desc: "素数域椭圆曲线群：toy 曲线 19 阶循环群整表手算、double-and-add 标量乘轨迹审计、secp256k1 ECDH 密钥交换，以及公钥合法性检查防小子群攻击。",
+    tag: "公钥密码",
+    color: "#34d399",
+  },
+  {
+    href: "/sm2",
+    no: "Lab 14",
+    title: "SM2 国密算法",
+    en: "SM2 Chinese National Standard",
+    desc: "从零实现国密 SM3 摘要（通过 GM/T 0004 官方向量）+ SM2 固定曲线：ZA 身份预处理、SM2-DSA 签名、SM2-PKE 加密（C1‖C3‖C2 完整性校验）。",
+    tag: "公钥密码",
+    color: "#c084fc",
+  },
 ];
 
 export default function Home() {
@@ -91,7 +145,7 @@ export default function Home() {
           </span>
         </h1>
         <p className="mx-auto mt-5 max-w-2xl text-base leading-relaxed" style={{ color: "var(--text-dim)" }}>
-          从古典的纸笔密码到现代哈希、公钥密钥交换与对称加密，八个实验覆盖密码学演进的主线。
+          从古典的纸笔密码到国密与现代公钥体系，十四个实验覆盖密码学演进的主线。
           每个演示都提供输入交互、过程可视化和逐步演算，帮助理解算法「为什么这样设计」。
         </p>
       </section>
