@@ -99,7 +99,7 @@ export default function Sm2Page() {
       {/* 头部 */}
       <div>
         <div className="flex items-center gap-3">
-          <Link href="/" className="text-xs" style={{ color: "var(--text-faint)" }}>← 总览</Link>
+          <Link href="/single" className="text-xs" style={{ color: "var(--text-faint)" }}>← 单机实验</Link>
           <span className="font-mono text-xs font-bold tracking-widest" style={{ color: "var(--amber)" }}>Lab 14</span>
         </div>
         <h1 className="mt-2 text-3xl font-black tracking-tight">SM2 国密公钥密码</h1>

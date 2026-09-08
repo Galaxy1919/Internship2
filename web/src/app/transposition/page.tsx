@@ -82,7 +82,7 @@ export default function TranspositionPage() {
     <div className="space-y-8">
       <div>
         <div className="flex items-center gap-3">
-          <Link href="/" className="text-xs" style={{ color: "var(--text-faint)" }}>← 总览</Link>
+          <Link href="/single" className="text-xs" style={{ color: "var(--text-faint)" }}>← 单机实验</Link>
           <span className="font-mono text-xs font-bold tracking-widest" style={{ color: "var(--cyan)" }}>Lab 02</span>
         </div>
         <h1 className="mt-2 text-3xl font-black tracking-tight">列置换密码</h1>

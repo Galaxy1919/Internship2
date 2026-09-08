@@ -72,7 +72,7 @@ export default function PlayfairPage() {
       {/* 头部 */}
       <div>
         <div className="flex items-center gap-3">
-          <Link href="/" className="text-xs" style={{ color: "var(--text-faint)" }}>← 总览</Link>
+          <Link href="/single" className="text-xs" style={{ color: "var(--text-faint)" }}>← 单机实验</Link>
           <span className="font-mono text-xs font-bold tracking-widest" style={{ color: "var(--amber)" }}>Lab 09</span>
         </div>
         <h1 className="mt-2 text-3xl font-black tracking-tight">Playfair 双字母替代密码</h1>
