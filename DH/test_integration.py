@@ -72,9 +72,30 @@ def test_file():
         (RECEIVED / tmp.name).unlink(missing_ok=True)
 
 
+def test_cipher():
+    for cid in ["aes", "des", "rc4", "ca", "vigenere", "playfair", "multiliteral", "transposition"]:
+        port = free_port()
+        server = start_server(port)
+        client = subprocess.run([sys.executable, "encrypt_client.py",
+                                 "--cipher", cid, "--text", "ATTACKATDAWN",
+                                 "--port", str(port)],
+                                cwd=HERE, text=True, capture_output=True, timeout=15)
+        rest = server.communicate(timeout=15)[0]
+        ok = (client.returncode == 0
+              and "SERVER_ACK PASS" in client.stdout
+              and "PLAINTEXT ATTACKATDAWN" in rest)
+        print(f"[{'PASS' if ok else 'FAIL'}] {cid}")
+        if not ok:
+            print(client.stdout)
+            print(client.stderr)
+            print(rest)
+            raise SystemExit(f"INTEGRATION FAIL (cipher: {cid})")
+
+
 def main():
     test_message()
     test_file()
+    test_cipher()
     print("INTEGRATION PASS")
 
 

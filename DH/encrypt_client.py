@@ -1,5 +1,6 @@
-"""加密端（TCP 客户端）：交换 DH 公开值，派生 AES 密钥并发送加密消息或文件。"""
+"""加密端（TCP 客户端）：交换 DH 公开值，派生 AES 密钥并发送加密消息 / 文件 / 任意密码密文。"""
 import argparse
+import json
 import socket
 from pathlib import Path
 from dh_socket_common import (
@@ -7,6 +8,7 @@ from dh_socket_common import (
     send_frame, recv_frame, encrypt_message, transcript_hash,
     send_file_chunks,
 )
+from cipher_registry import get as get_cipher, list_ciphers
 
 ALICE_PRIVATE = 1234
 
@@ -68,6 +70,34 @@ def send_file(path, host="127.0.0.1", port=29090, encrypt=True):
         return ack
 
 
+def send_cipher_message(cipher_id, text, key=None, host="127.0.0.1", port=29090):
+    """加密端选任意密码算法，加密后经传输层(DH+AES)发给解密端。
+
+    流程：本地用所选算法加密 -> 装进信封 {cipher, key, payload} -> 整个信封
+    用传输层 AES+HMAC 再加密一次 -> 发送。解密端解密传输层后按 cipher 分派。
+    """
+    cipher = get_cipher(cipher_id)
+    key_bytes = cipher["make_key"](key)
+    payload = text.encode("utf-8")
+    ciphertext = cipher["encrypt"](payload, key_bytes)
+    envelope = {"cipher": cipher_id, "key": key_bytes.hex(), "payload": ciphertext.hex()}
+    sock, secret, aes_key, mac_key, session = connect_and_handshake(host, port)
+    with sock:
+        packet = encrypt_message(json.dumps(envelope, ensure_ascii=False), aes_key, mac_key)
+        packet.update({"type": "cipher_message", "session": session})
+        send_frame(sock, packet)
+        ack = recv_frame(sock)
+        if ack.get("status") != "PASS" or ack.get("session") != session:
+            raise ValueError("解密端确认失败")
+        print(f"DH_SHARED {secret}")
+        print(f"SESSION {session}")
+        print(f"CIPHER {cipher['label']}")
+        print(f"KEY {key_bytes.hex()}")
+        print(f"CIPHERTEXT {ciphertext.hex()}")
+        print("SERVER_ACK PASS")
+        return ack
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("message", nargs="?", default="DH交换成功，这是一条AES加密消息")
@@ -75,8 +105,18 @@ if __name__ == "__main__":
     parser.add_argument("--port", type=int, default=29090)
     parser.add_argument("--file", dest="path", help="发送文件（而非消息）")
     parser.add_argument("--plain", action="store_true", help="文件不加密、明文传输")
+    parser.add_argument("--cipher", choices=[cid for cid, _ in list_ciphers()],
+                        help="选择密码算法加密发送（可选: %(choices)s）")
+    parser.add_argument("--text", help="用 --cipher 时要发送的明文")
+    parser.add_argument("--key", help="密码算法的密钥字符串（缺省自动生成/用默认词）")
     args = parser.parse_args()
-    if args.path:
+
+    if args.cipher:
+        if args.text is None:
+            parser.error("--cipher 需要配合 --text 指定明文")
+        send_cipher_message(args.cipher, args.text, key=args.key,
+                            host=args.host, port=args.port)
+    elif args.path:
         send_file(args.path, args.host, args.port, encrypt=not args.plain)
     else:
         send_encrypted(args.message, args.host, args.port)

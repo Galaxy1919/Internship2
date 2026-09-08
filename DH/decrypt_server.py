@@ -1,5 +1,6 @@
-"""解密端（TCP 服务端）：交换 DH 公开值，验证会话并解密 AES 消息 / 接收文件。"""
+"""解密端（TCP 服务端）：交换 DH 公开值，验证会话并解密 AES 消息 / 接收文件 / 按密码分派解密。"""
 import argparse
+import json
 import socket
 from pathlib import Path
 from dh_socket_common import (
@@ -7,6 +8,7 @@ from dh_socket_common import (
     send_frame, recv_frame, decrypt_message, transcript_hash,
     recv_file_chunks,
 )
+from cipher_registry import get as get_cipher
 
 BOB_PRIVATE = 5678
 OUT_DIR = Path(__file__).resolve().parent / "received"
@@ -58,6 +60,20 @@ def serve(host="127.0.0.1", port=29090, once=True):
                     print(f"FILE_SAVED {out_path}")
                     send_frame(conn, {"type": "file_ack", "session": session,
                                       "status": "PASS", "size": len(data)})
+
+                elif packet.get("type") == "cipher_message":
+                    # 先解传输层(DH+AES+HMAC)得到信封，再按 cipher 分派到对应算法解密
+                    envelope = json.loads(decrypt_message(packet, aes_key, mac_key))
+                    cipher = get_cipher(envelope["cipher"])
+                    key = bytes.fromhex(envelope["key"])
+                    payload = bytes.fromhex(envelope["payload"])
+                    plaintext = cipher["decrypt"](payload, key).decode("utf-8", errors="replace")
+                    print(f"CLIENT {address[0]}:{address[1]}")
+                    print(f"DH_SHARED {secret}")
+                    print(f"SESSION {session}")
+                    print(f"CIPHER {cipher['label']}")
+                    print(f"PLAINTEXT {plaintext}")
+                    send_frame(conn, {"type": "ack", "session": session, "status": "PASS"})
 
                 else:
                     raise ValueError(f"未知的消息类型: {packet.get('type')}")
