@@ -150,6 +150,28 @@ def test_ecdh():
         raise SystemExit("INTEGRATION FAIL (ecdh)")
 
 
+def test_transport():
+    for tr in ["des", "rc4", "ca"]:
+        port = free_port()
+        server = start_server(port)
+        client = subprocess.run([sys.executable, "encrypt_client.py",
+                                 "传输密码动态测试", "--transport", tr,
+                                 "--port", str(port)],
+                                cwd=HERE, text=True, capture_output=True, timeout=15)
+        rest = server.communicate(timeout=15)[0]
+        ok = (client.returncode == 0
+              and "SERVER_ACK PASS" in client.stdout
+              and f"TRANSPORT {tr}" in client.stdout
+              and f"TRANSPORT {tr}" in rest
+              and "PLAINTEXT 传输密码动态测试" in rest)
+        print(f"[{'PASS' if ok else 'FAIL'}] transport {tr}")
+        if not ok:
+            print(client.stdout)
+            print(client.stderr)
+            print(rest)
+            raise SystemExit(f"INTEGRATION FAIL (transport: {tr})")
+
+
 def main():
     test_message()
     test_file()
@@ -157,6 +179,7 @@ def main():
     test_pubkey()
     test_digest()
     test_ecdh()
+    test_transport()
     print("INTEGRATION PASS")
 
 
