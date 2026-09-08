@@ -17,6 +17,7 @@
 import hashlib
 import importlib.util
 import secrets
+import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -26,6 +27,7 @@ ROOT = HERE.parent
 def _load(name, path):
     spec = importlib.util.spec_from_file_location(name, path)
     mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod          # 注册进 sys.modules，dataclass 解析注解需要
     spec.loader.exec_module(mod)
     return mod
 
@@ -124,3 +126,129 @@ def get(cipher_id):
 def list_ciphers():
     """返回 [(id, label), ...]，供 CLI 展示。"""
     return [(cid, e["label"]) for cid, e in REGISTRY.items()]
+
+
+# ---------------------------------------------------------------------------
+# 公钥密码（阶段 B3）：密钥流反向 —— 解密端生成密钥对、发公钥，加密端用公钥加密
+# ---------------------------------------------------------------------------
+
+RSA = _load("cipher_rsa", ROOT / "publicKey" / "RSA" / "main.py")
+ELGAMAL = _load("cipher_elgamal", ROOT / "publicKey" / "Elgamal" / "main.py")
+SM2 = _load("cipher_sm2", ROOT / "publicKey" / "SM2" / "main.py")
+ECC = _load("cipher_ecc", ROOT / "publicKey" / "ECC" / "main.py")
+MD5 = _load("cipher_md5", ROOT / "MD5" / "main.py")
+
+RSA_BITS = 512        # 演示用；生产应 ≥ 2048
+ELGAMAL_BITS = 128    # 演示用（安全素数生成较慢，取小）；生产应 ≥ 2048
+
+
+def _rsa_generate():
+    key = RSA.generate_key(bits=RSA_BITS)
+    return key.private, f"{key.n}:{key.e}"
+
+
+def _rsa_encrypt(payload, pub_str):
+    n, e = (int(x) for x in pub_str.split(":"))
+    m = int.from_bytes(payload, "big")
+    if not (0 <= m < n):
+        raise ValueError("明文过大，超过 RSA 模数 n（裸 RSA 无填充，只适合短消息）")
+    c = RSA.encrypt(m, (n, e))
+    return c.to_bytes((n.bit_length() + 7) // 8, "big")
+
+
+def _rsa_decrypt(ct, private):
+    n, d = private
+    m = RSA.decrypt(int.from_bytes(ct, "big"), (n, d))
+    return m.to_bytes((m.bit_length() + 7) // 8, "big")
+
+
+def _elgamal_generate():
+    key = ELGAMAL.generate_key(bits=ELGAMAL_BITS)
+    return key, f"{key.p}:{key.g}:{key.y}"
+
+
+def _elgamal_encrypt(payload, pub_str):
+    p, g, y = (int(x) for x in pub_str.split(":"))
+    m = int.from_bytes(payload, "big")
+    if not (1 <= m < p):
+        raise ValueError("明文过大，超过 ElGamal 模数 p（裸 ElGamal 只适合短消息）")
+    c1, c2 = ELGAMAL.encrypt(m, (p, g, y))
+    w = (p.bit_length() + 7) // 8
+    return c1.to_bytes(w, "big") + c2.to_bytes(w, "big")
+
+
+def _elgamal_decrypt(ct, key):
+    w = (key.p.bit_length() + 7) // 8
+    c1 = int.from_bytes(ct[:w], "big")
+    c2 = int.from_bytes(ct[w:], "big")
+    m = ELGAMAL.decrypt((c1, c2), key)
+    return m.to_bytes((m.bit_length() + 7) // 8, "big")
+
+
+def _sm2_generate():
+    d, pub = SM2.generate_keypair()
+    return d, f"{pub[0]}:{pub[1]}"
+
+
+def _sm2_encrypt(payload, pub_str):
+    x, y = (int(v) for v in pub_str.split(":"))
+    return SM2.encrypt_pke(payload, (x, y))
+
+
+def _sm2_decrypt(ct, d):
+    return SM2.decrypt_pke(ct, d)
+
+
+def _pubkey_entry(cipher_id, label, generate, encrypt, decrypt):
+    return {"id": cipher_id, "label": label,
+            "generate": generate, "encrypt": encrypt, "decrypt": decrypt}
+
+
+PUBKEY_REGISTRY = {
+    "rsa":     _pubkey_entry("rsa",     "公钥 RSA",     _rsa_generate,     _rsa_encrypt,     _rsa_decrypt),
+    "elgamal": _pubkey_entry("elgamal", "公钥 ElGamal", _elgamal_generate, _elgamal_encrypt, _elgamal_decrypt),
+    "sm2":     _pubkey_entry("sm2",     "公钥 SM2",     _sm2_generate,     _sm2_encrypt,     _sm2_decrypt),
+}
+
+
+def get_pubkey(cipher_id):
+    if cipher_id not in PUBKEY_REGISTRY:
+        raise ValueError(f"未知公钥密码: {cipher_id}，可选: {', '.join(PUBKEY_REGISTRY)}")
+    return PUBKEY_REGISTRY[cipher_id]
+
+
+def list_pubkey_ciphers():
+    return [(cid, e["label"]) for cid, e in PUBKEY_REGISTRY.items()]
+
+
+# ---------------------------------------------------------------------------
+# MD5（单向散列）与 ECC（ECDH 密钥交换）
+# ---------------------------------------------------------------------------
+
+def md5_hex(payload):
+    """计算 MD5 十六进制摘要，双机场景用于完整性校验。"""
+    return MD5.md5_hex(payload)
+
+
+_ECC_CURVE = ECC.SECP256K1
+
+
+def ecc_generate_keypair():
+    """生成 ECC(secp256k1) 密钥对，返回 (私钥 d, 公钥点 Q)。"""
+    return ECC.generate_keypair(_ECC_CURVE)
+
+
+def ecc_ecdh(priv, peer_pub):
+    """计算 ECDH 共享点 S = priv · peer_pub。"""
+    return ECC.ecdh(priv, peer_pub, _ECC_CURVE)
+
+
+def ecc_point_serialize(p):
+    """把椭圆曲线点序列化成 "x:y" 十六进制字符串。"""
+    return f"{p[0]:x}:{p[1]:x}"
+
+
+def ecc_point_parse(s):
+    """从 "x:y" 十六进制字符串还原椭圆曲线点。"""
+    x, y = s.split(":")
+    return int(x, 16), int(y, 16)

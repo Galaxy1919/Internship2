@@ -1,5 +1,6 @@
 """自动验收：启动解密端，再运行加密端，检查 DH、AES、HMAC 全链路（消息 + 文件）。"""
 import socket
+import re
 import subprocess
 import sys
 import tempfile
@@ -92,10 +93,70 @@ def test_cipher():
             raise SystemExit(f"INTEGRATION FAIL (cipher: {cid})")
 
 
+def test_pubkey():
+    for cid in ["rsa", "elgamal", "sm2"]:
+        port = free_port()
+        server = start_server(port)
+        client = subprocess.run([sys.executable, "encrypt_client.py",
+                                 "--pubkey", cid, "--text", "PUBKEYTEST",
+                                 "--port", str(port)],
+                                cwd=HERE, text=True, capture_output=True, timeout=30)
+        rest = server.communicate(timeout=30)[0]
+        ok = (client.returncode == 0
+              and "SERVER_ACK PASS" in client.stdout
+              and "PLAINTEXT PUBKEYTEST" in rest)
+        print(f"[{'PASS' if ok else 'FAIL'}] pubkey {cid}")
+        if not ok:
+            print(client.stdout)
+            print(client.stderr)
+            print(rest)
+            raise SystemExit(f"INTEGRATION FAIL (pubkey: {cid})")
+
+
+def test_digest():
+    port = free_port()
+    server = start_server(port)
+    client = subprocess.run([sys.executable, "encrypt_client.py",
+                             "--digest", "--text", "完整性校验测试",
+                             "--port", str(port)],
+                            cwd=HERE, text=True, capture_output=True, timeout=15)
+    rest = server.communicate(timeout=15)[0]
+    ok = (client.returncode == 0
+          and "SERVER_ACK PASS" in client.stdout
+          and "DIGEST_MATCH PASS" in rest)
+    print(f"[{'PASS' if ok else 'FAIL'}] digest")
+    if not ok:
+        print(client.stdout)
+        print(client.stderr)
+        print(rest)
+        raise SystemExit("INTEGRATION FAIL (digest)")
+
+
+def test_ecdh():
+    port = free_port()
+    server = start_server(port)
+    client = subprocess.run([sys.executable, "encrypt_client.py",
+                             "--ecdh", "--port", str(port)],
+                            cwd=HERE, text=True, capture_output=True, timeout=15)
+    rest = server.communicate(timeout=15)[0]
+    c = re.search(r"ECDH_SHARED (\w+)", client.stdout)
+    s = re.search(r"ECDH_SHARED (\w+)", rest)
+    ok = (client.returncode == 0 and c and s and c.group(1) == s.group(1))
+    print(f"[{'PASS' if ok else 'FAIL'}] ecdh  (client={c.group(1) if c else None}, server={s.group(1) if s else None})")
+    if not ok:
+        print(client.stdout)
+        print(client.stderr)
+        print(rest)
+        raise SystemExit("INTEGRATION FAIL (ecdh)")
+
+
 def main():
     test_message()
     test_file()
     test_cipher()
+    test_pubkey()
+    test_digest()
+    test_ecdh()
     print("INTEGRATION PASS")
 
 

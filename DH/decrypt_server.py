@@ -1,4 +1,4 @@
-"""解密端（TCP 服务端）：交换 DH 公开值，验证会话并解密 AES 消息 / 接收文件 / 按密码分派解密。"""
+"""解密端（TCP 服务端）：交换 DH 公开值，验证会话并按帧类型分派（消息/文件/对称密码/公钥/摘要/ECDH）。"""
 import argparse
 import json
 import socket
@@ -8,7 +8,15 @@ from dh_socket_common import (
     send_frame, recv_frame, decrypt_message, transcript_hash,
     recv_file_chunks,
 )
-from cipher_registry import get as get_cipher
+from cipher_registry import (
+    get as get_cipher,
+    get_pubkey,
+    md5_hex,
+    ecc_generate_keypair,
+    ecc_ecdh,
+    ecc_point_serialize,
+    ecc_point_parse,
+)
 
 BOB_PRIVATE = 5678
 OUT_DIR = Path(__file__).resolve().parent / "received"
@@ -31,52 +39,107 @@ def serve(host="127.0.0.1", port=29090, once=True):
                 aes_key, mac_key = derive_material(secret)
                 session = transcript_hash(alice_public, bob_public)
                 send_frame(conn, {"type": "dh_reply", "public": bob_public, "session": session})
-                packet = recv_frame(conn)
-                if packet.get("session") != session:
-                    raise ValueError("会话编号不匹配")
 
-                if packet.get("type") == "encrypted_message":
-                    plaintext = decrypt_message(packet, aes_key, mac_key)
-                    print(f"CLIENT {address[0]}:{address[1]}")
-                    print(f"DH_SHARED {secret}")
-                    print(f"SESSION {session}")
-                    print(f"PLAINTEXT {plaintext}")
-                    send_frame(conn, {"type": "ack", "session": session, "status": "PASS"})
+                pubkey_priv = None      # 会话内公钥密码的私钥 (cipher_id, private)
+                while True:             # 会话内多帧循环，直到一个终结帧
+                    packet = recv_frame(conn)
+                    if packet.get("session") != session:
+                        raise ValueError("会话编号不匹配")
+                    t = packet.get("type")
 
-                elif packet.get("type") == "file_meta":
-                    filename = Path(packet.get("filename", "unnamed")).name
-                    encrypted = bool(packet.get("encrypted", True))
-                    data = recv_file_chunks(conn,
-                                            aes_key if encrypted else None,
-                                            mac_key if encrypted else None)
-                    OUT_DIR.mkdir(exist_ok=True)
-                    out_path = OUT_DIR / filename
-                    out_path.write_bytes(data)
-                    print(f"CLIENT {address[0]}:{address[1]}")
-                    print(f"DH_SHARED {secret}")
-                    print(f"SESSION {session}")
-                    print(f"FILE {filename}")
-                    print(f"FILE_SIZE {len(data)}")
-                    print(f"FILE_SAVED {out_path}")
-                    send_frame(conn, {"type": "file_ack", "session": session,
-                                      "status": "PASS", "size": len(data)})
+                    if t == "encrypted_message":
+                        plaintext = decrypt_message(packet, aes_key, mac_key)
+                        print(f"CLIENT {address[0]}:{address[1]}")
+                        print(f"DH_SHARED {secret}")
+                        print(f"SESSION {session}")
+                        print(f"PLAINTEXT {plaintext}")
+                        send_frame(conn, {"type": "ack", "session": session, "status": "PASS"})
+                        break
 
-                elif packet.get("type") == "cipher_message":
-                    # 先解传输层(DH+AES+HMAC)得到信封，再按 cipher 分派到对应算法解密
-                    envelope = json.loads(decrypt_message(packet, aes_key, mac_key))
-                    cipher = get_cipher(envelope["cipher"])
-                    key = bytes.fromhex(envelope["key"])
-                    payload = bytes.fromhex(envelope["payload"])
-                    plaintext = cipher["decrypt"](payload, key).decode("utf-8", errors="replace")
-                    print(f"CLIENT {address[0]}:{address[1]}")
-                    print(f"DH_SHARED {secret}")
-                    print(f"SESSION {session}")
-                    print(f"CIPHER {cipher['label']}")
-                    print(f"PLAINTEXT {plaintext}")
-                    send_frame(conn, {"type": "ack", "session": session, "status": "PASS"})
+                    elif t == "file_meta":
+                        filename = Path(packet.get("filename", "unnamed")).name
+                        encrypted = bool(packet.get("encrypted", True))
+                        data = recv_file_chunks(conn,
+                                                aes_key if encrypted else None,
+                                                mac_key if encrypted else None)
+                        OUT_DIR.mkdir(exist_ok=True)
+                        out_path = OUT_DIR / filename
+                        out_path.write_bytes(data)
+                        print(f"CLIENT {address[0]}:{address[1]}")
+                        print(f"DH_SHARED {secret}")
+                        print(f"SESSION {session}")
+                        print(f"FILE {filename}")
+                        print(f"FILE_SIZE {len(data)}")
+                        print(f"FILE_SAVED {out_path}")
+                        send_frame(conn, {"type": "file_ack", "session": session,
+                                          "status": "PASS", "size": len(data)})
+                        break
 
-                else:
-                    raise ValueError(f"未知的消息类型: {packet.get('type')}")
+                    elif t == "cipher_message":
+                        envelope = json.loads(decrypt_message(packet, aes_key, mac_key))
+                        cipher = get_cipher(envelope["cipher"])
+                        key = bytes.fromhex(envelope["key"])
+                        payload = bytes.fromhex(envelope["payload"])
+                        plaintext = cipher["decrypt"](payload, key).decode("utf-8", errors="replace")
+                        print(f"CLIENT {address[0]}:{address[1]}")
+                        print(f"DH_SHARED {secret}")
+                        print(f"SESSION {session}")
+                        print(f"CIPHER {cipher['label']}")
+                        print(f"PLAINTEXT {plaintext}")
+                        send_frame(conn, {"type": "ack", "session": session, "status": "PASS"})
+                        break
+
+                    elif t == "pubkey_request":
+                        # 反向密钥流第一步：解密端生成密钥对，把公钥发回加密端
+                        pub = get_pubkey(packet["cipher"])
+                        priv, pub_str = pub["generate"]()
+                        pubkey_priv = (packet["cipher"], priv)
+                        send_frame(conn, {"type": "pubkey_reply", "cipher": packet["cipher"],
+                                          "public_key": pub_str, "session": session})
+                        continue
+
+                    elif t == "pubkey_message":
+                        if pubkey_priv is None:
+                            raise ValueError("收到 pubkey_message 但未先收到 pubkey_request")
+                        cipher_id, priv = pubkey_priv
+                        pub = get_pubkey(cipher_id)
+                        ct = bytes.fromhex(decrypt_message(packet, aes_key, mac_key))
+                        plaintext = pub["decrypt"](ct, priv).decode("utf-8", errors="replace")
+                        print(f"CLIENT {address[0]}:{address[1]}")
+                        print(f"DH_SHARED {secret}")
+                        print(f"SESSION {session}")
+                        print(f"CIPHER {pub['label']}")
+                        print(f"PLAINTEXT {plaintext}")
+                        send_frame(conn, {"type": "ack", "session": session, "status": "PASS"})
+                        break
+
+                    elif t == "digest_verify":
+                        env = json.loads(decrypt_message(packet, aes_key, mac_key))
+                        recomputed = md5_hex(env["message"].encode("utf-8"))
+                        match = recomputed == env["digest"]
+                        print(f"CLIENT {address[0]}:{address[1]}")
+                        print(f"DH_SHARED {secret}")
+                        print(f"SESSION {session}")
+                        print(f"DIGEST {env['digest']}")
+                        print(f"DIGEST_RECOMPUTED {recomputed}")
+                        print(f"DIGEST_MATCH {'PASS' if match else 'FAIL'}")
+                        send_frame(conn, {"type": "ack", "session": session, "status": "PASS"})
+                        break
+
+                    elif t == "ecdh_hello":
+                        dB, QB = ecc_generate_keypair()
+                        QA = ecc_point_parse(packet["public"])
+                        SB = ecc_ecdh(dB, QA)
+                        send_frame(conn, {"type": "ecdh_reply", "public": ecc_point_serialize(QB),
+                                          "session": session})
+                        print(f"CLIENT {address[0]}:{address[1]}")
+                        print(f"DH_SHARED {secret}")
+                        print(f"SESSION {session}")
+                        print(f"ECDH_SHARED {SB[0]:x}")
+                        break
+
+                    else:
+                        raise ValueError(f"未知的消息类型: {t}")
             if once:
                 break
 
