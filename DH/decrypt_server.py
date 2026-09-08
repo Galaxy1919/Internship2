@@ -1,12 +1,16 @@
-"""解密端（TCP 服务端）：交换 DH 公开值，验证会话并解密 AES 消息。"""
+"""解密端（TCP 服务端）：交换 DH 公开值，验证会话并解密 AES 消息 / 接收文件。"""
 import argparse
 import socket
+from pathlib import Path
 from dh_socket_common import (
     P, G, public_value, shared_secret, derive_material,
     send_frame, recv_frame, decrypt_message, transcript_hash,
+    recv_file_chunks,
 )
 
 BOB_PRIVATE = 5678
+OUT_DIR = Path(__file__).resolve().parent / "received"
+
 
 def serve(host="127.0.0.1", port=29090, once=True):
     bob_public = public_value(BOB_PRIVATE)
@@ -24,18 +28,46 @@ def serve(host="127.0.0.1", port=29090, once=True):
                 secret = shared_secret(alice_public, BOB_PRIVATE)
                 aes_key, mac_key = derive_material(secret)
                 session = transcript_hash(alice_public, bob_public)
-                send_frame(conn, {"type":"dh_reply", "public":bob_public, "session":session})
+                send_frame(conn, {"type": "dh_reply", "public": bob_public, "session": session})
                 packet = recv_frame(conn)
-                if packet.get("type") != "encrypted_message" or packet.get("session") != session:
+                if packet.get("session") != session:
                     raise ValueError("会话编号不匹配")
-                plaintext = decrypt_message(packet, aes_key, mac_key)
-                print(f"CLIENT {address[0]}:{address[1]}")
-                print(f"DH_SHARED {secret}")
-                print(f"SESSION {session}")
-                print(f"PLAINTEXT {plaintext}")
-                send_frame(conn, {"type":"ack", "session":session, "status":"PASS"})
-            if once: break
+
+                if packet.get("type") == "encrypted_message":
+                    plaintext = decrypt_message(packet, aes_key, mac_key)
+                    print(f"CLIENT {address[0]}:{address[1]}")
+                    print(f"DH_SHARED {secret}")
+                    print(f"SESSION {session}")
+                    print(f"PLAINTEXT {plaintext}")
+                    send_frame(conn, {"type": "ack", "session": session, "status": "PASS"})
+
+                elif packet.get("type") == "file_meta":
+                    filename = Path(packet.get("filename", "unnamed")).name
+                    encrypted = bool(packet.get("encrypted", True))
+                    data = recv_file_chunks(conn,
+                                            aes_key if encrypted else None,
+                                            mac_key if encrypted else None)
+                    OUT_DIR.mkdir(exist_ok=True)
+                    out_path = OUT_DIR / filename
+                    out_path.write_bytes(data)
+                    print(f"CLIENT {address[0]}:{address[1]}")
+                    print(f"DH_SHARED {secret}")
+                    print(f"SESSION {session}")
+                    print(f"FILE {filename}")
+                    print(f"FILE_SIZE {len(data)}")
+                    print(f"FILE_SAVED {out_path}")
+                    send_frame(conn, {"type": "file_ack", "session": session,
+                                      "status": "PASS", "size": len(data)})
+
+                else:
+                    raise ValueError(f"未知的消息类型: {packet.get('type')}")
+            if once:
+                break
+
 
 if __name__ == "__main__":
-    parser=argparse.ArgumentParser(); parser.add_argument("--host",default="127.0.0.1"); parser.add_argument("--port",type=int,default=29090)
-    args=parser.parse_args(); serve(args.host,args.port)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=29090)
+    args = parser.parse_args()
+    serve(args.host, args.port)
