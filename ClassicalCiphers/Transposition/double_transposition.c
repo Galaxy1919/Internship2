@@ -174,6 +174,71 @@ int main(int argc, char **argv)
     if (argc > 1 && strcmp(argv[1], "selftest") == 0)
         return selftest();
 
+    /* 命令行数据模式（供 Python 桥接层 subprocess 调用）：
+     *   ./dt enc <K1> <K2> <TEXT>             加密 → stdout: "<4位hex明文长>:<密文>"
+     *   ./dt dec <K1> <K2> <长度前缀:密文>     解密 → stdout: 明文
+     * 本实现用 'X' 补齐矩阵，密文本身不含原始明文长度；解密端必须知道
+     * 明文长度才能截掉填充，故 enc 输出统一携带 4 位十六进制明文长度前缀。 */
+    if (argc >= 5 && (strcmp(argv[1], "enc") == 0 || strcmp(argv[1], "dec") == 0)) {
+        TransKey k1, k2;
+        if (!key_parse(&k1, argv[2]) || !key_parse(&k2, argv[3])) {
+            fprintf(stderr, "密钥非法：需为 1..n 各出现一次的数字排列\n");
+            return 1;
+        }
+        if (k1.n != k2.n) {
+            fprintf(stderr, "两个密钥列数必须相同\n");
+            return 1;
+        }
+        if (argv[1][0] == 'e') {
+            int plen = (int)strlen(argv[4]);
+            char cipher[MAX_TEXT];
+            int clen;
+            if (plen + k1.n > MAX_TEXT) {
+                fprintf(stderr, "明文过长\n");
+                return 1;
+            }
+            if (dt_encrypt(&k1, &k2, argv[4], plen, cipher, &clen) != 0) {
+                fprintf(stderr, "加密失败\n");
+                return 1;
+            }
+            cipher[clen] = '\0';
+            printf("%04x:%s\n", plen, cipher);
+            return 0;
+        }
+        /* dec <K1> <K2> <4位hex明文长>:<密文> */
+        {
+            const char *s = argv[4];
+            size_t slen = strlen(s);
+            int plen = 0;
+            if (slen < 6 || s[4] != ':') {
+                fprintf(stderr, "密文格式应为 <4位hex明文长>:<密文>\n");
+                return 1;
+            }
+            for (int i = 0; i < 4; i++) {
+                char c = s[i];
+                int v = (c >= '0' && c <= '9') ? c - '0'
+                      : (c >= 'a' && c <= 'f') ? c - 'a' + 10
+                      : (c >= 'A' && c <= 'F') ? c - 'A' + 10 : -1;
+                if (v < 0) {
+                    fprintf(stderr, "长度前缀非法\n");
+                    return 1;
+                }
+                plen = plen * 16 + v;
+            }
+            const char *cipher = s + 5;
+            int clen = (int)strlen(cipher);
+            char dec[MAX_TEXT];
+            if (clen > MAX_TEXT || plen < 0 || plen > clen) {
+                fprintf(stderr, "密文长度异常\n");
+                return 1;
+            }
+            dt_decrypt(&k1, &k2, cipher, clen, dec);
+            dec[plen] = '\0';               /* 截掉填充字符 */
+            printf("%s\n", dec);
+            return 0;
+        }
+    }
+
     char plain[MAX_TEXT], k1s[MAX_COLS + 1], k2s[MAX_COLS + 1];
     TransKey k1, k2;
     char cipher[MAX_TEXT], dec[MAX_TEXT];

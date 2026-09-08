@@ -83,8 +83,24 @@ int autokey_decrypt(const char *key, const char *cipher, char *plain)
 
 /* 交互演示入口：测试编译时用 -DAUTOKEY_NO_MAIN 排除（见 test/test_autokey.c） */
 #ifndef AUTOKEY_NO_MAIN
-int main(void)
+int main(int argc, char **argv)
 {
+    /* 命令行数据模式（供 Python 桥接层 subprocess 调用，stdout 单行结果）：
+     *   ./autokey enc <KEY> <TEXT>   加密：输出密文
+     *   ./autokey dec <KEY> <TEXT>   解密：输出明文
+     * 与交互模式共用同一套核心函数，无填充、长度不变。 */
+    if (argc >= 4 && (strcmp(argv[1], "enc") == 0 || strcmp(argv[1], "dec") == 0)) {
+        char out[MAX_TEXT];
+        int r = (argv[1][0] == 'e') ? autokey_encrypt(argv[2], argv[3], out)
+                                    : autokey_decrypt(argv[2], argv[3], out);
+        if (r != 0) {
+            fprintf(stderr, "密钥非法：需为 1..%d 个大写字母\n", MAX_KEY);
+            return 1;
+        }
+        printf("%s\n", out);
+        return 0;
+    }
+
     char key[MAX_KEY + 1], plain[MAX_TEXT], cipher[MAX_TEXT], dec[MAX_TEXT];
 
     printf("===== Autokey Cipher (明文自密钥) =====\n");

@@ -24,3 +24,15 @@ $RECYCLE.BIN/
 
 # 运行时输出
 received/
+
+# C 编译产物（对象文件 / Windows 可执行 / Linux 无后缀可执行）
+*.o
+*.obj
+*.exe
+*.out
+ClassicalCiphers/PolyalphabeticSubstitution/autokey
+ClassicalCiphers/Transposition/dt
+publicKey/SM2/sm2_cli
+publicKey/SM2/test/bn_test
+publicKey/SM2/test/sm2_test
+publicKey/SM2/test/sm3_test
