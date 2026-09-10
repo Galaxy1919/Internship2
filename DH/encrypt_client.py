@@ -6,7 +6,7 @@ from pathlib import Path
 from dh_socket_common import (
     P, G, public_value, shared_secret, derive_material,
     send_frame, recv_frame, encrypt_message, transcript_hash,
-    send_file_chunks, TRANSPORT_CIPHERS,
+    send_file_stream, TRANSPORT_CIPHERS, MAX_FILE_SIZE,
     verify_transcript, parse_pubkey, BOB_IDENTITY_PUB_STR,
 )
 from cipher_registry import (
@@ -75,17 +75,21 @@ def send_encrypted(message, host="127.0.0.1", port=29090, transport="aes",
 def send_file(path, host="127.0.0.1", port=29090, encrypt=True, transport="aes",
               bob_pubkey=BOB_IDENTITY_PUB_STR, verify_auth=True):
     """发送一个文件；encrypt=True 时用传输密码加密传输。"""
-    data = Path(path).read_bytes()
-    filename = Path(path).name
+    file_path = Path(path)
+    size = file_path.stat().st_size
+    if size > MAX_FILE_SIZE:
+        raise ValueError(f"文件大小超过上限 {MAX_FILE_SIZE} 字节")
+    filename = file_path.name
     sock, secret, tkey, mac_key, session, transport = connect_and_handshake(
         host, port, transport, bob_pubkey, verify_auth)
     with sock:
         send_frame(sock, {"type": "file_meta", "filename": filename,
-                          "size": len(data), "encrypted": encrypt, "session": session,
+                          "size": size, "encrypted": encrypt, "session": session,
                           "seq": 0})
-        send_file_chunks(sock, data,
-                         tkey if encrypt else None,
-                         mac_key if encrypt else None, transport)
+        with file_path.open("rb") as file_obj:
+            send_file_stream(sock, file_obj, size,
+                             tkey if encrypt else None,
+                             mac_key if encrypt else None, transport)
         ack = recv_frame(sock)
         if ack.get("status") != "PASS" or ack.get("session") != session:
             raise ValueError("解密端确认失败")
@@ -93,7 +97,7 @@ def send_file(path, host="127.0.0.1", port=29090, encrypt=True, transport="aes",
         print(f"SESSION {session}")
         print(f"TRANSPORT {transport}")
         print(f"FILE {filename}")
-        print(f"FILE_SIZE {len(data)}")
+        print(f"FILE_SIZE {size}")
         print("SERVER_ACK PASS")
         return ack
 

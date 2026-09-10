@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DH_ROOT = ROOT / "DH"
 sys.path.insert(0, str(DH_ROOT))
 
-from cipher_registry import get, get_pubkey, md5_hex  # noqa: E402
+from cipher_registry import PLAYFAIR, get, get_pubkey, md5_hex  # noqa: E402
 
 
 def main() -> int:
@@ -47,8 +47,16 @@ def main() -> int:
     key = entry["make_key"](args.key)
     ct = entry["encrypt"](payload, key)
     plain = entry["decrypt"](ct, key)
-    print(f"算法：{args.cipher}\n密文：{ct.hex()}\n解密结果：{plain.decode('utf-8', errors='replace')}\n往返验证：{'通过' if plain == payload else '失败'}")
-    return 0 if plain == payload else 1
+    if args.cipher == "playfair":
+        # Playfair 的双字母分组会插入填充 X，验证时应比较规范化明文。
+        expected = PLAYFAIR.prepare_plaintext(args.text).encode("utf-8")
+        verification = plain == expected
+        verification_label = "通过" if verification else "失败"
+    else:
+        verification = plain == payload
+        verification_label = "通过" if verification else "失败"
+    print(f"算法：{args.cipher}\n密文：{ct.hex()}\n解密结果：{plain.decode('utf-8', errors='replace')}\n往返验证：{verification_label}")
+    return 0 if verification else 1
 
 
 if __name__ == "__main__":

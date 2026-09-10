@@ -33,7 +33,7 @@ typedef struct {
     SM2_POINT P;
 } SM2_KEY;
 
-/* 生成密钥对：d 从 /dev/urandom 随机，P = dG；成功返回 0，失败返回 -1 */
+/* 生成密钥对：d 从系统随机源读取，P = dG；成功返回 0，失败返回 -1 */
 int sm2_keygen(SM2_KEY *key);
 
 /* 加密：out = C1x||C1y||C2||C3，*outlen = 64 + inlen + 32；成功返回 0 */
@@ -51,5 +51,8 @@ int sm2_encrypt_with_k(const SM2_KEY *key, const bn_t k,
 
 /* 测试用：校验点是否在曲线上（y² ≡ x³ + ax + b mod p） */
 int sm2_point_on_curve(const SM2_POINT *P);
+
+/* 测试用：校验基点、点乘和群阶关系，为后续优化点乘提供护栏 */
+int sm2_selftest(void);
 
 #endif /* SM2_H */

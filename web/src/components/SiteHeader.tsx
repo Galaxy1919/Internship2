@@ -35,11 +35,8 @@ export default function SiteHeader() {
       <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4">
         <Link href="/" className="flex items-center gap-2.5 font-mono text-sm font-bold tracking-tight">
           <span
-            className="flex h-7 w-7 items-center justify-center rounded-md font-bold text-black"
-            style={{
-              background: "linear-gradient(135deg,#4ade80,#22d3ee)",
-              boxShadow: "0 0 16px rgba(74,222,128,.4)",
-            }}
+            className="flex h-7 w-7 items-center justify-center rounded-md font-bold"
+            style={{ background: "var(--accent)", color: "var(--accent-ink)" }}
           >
             Σ
           </span>
@@ -75,8 +72,12 @@ export default function SiteHeader() {
                     style={{ color: "var(--accent)" }}
                   >
                     单机实验
-                    <span className="text-[10px]" style={{ color: "var(--text-faint)" }}>
-                      ▾
+                    <span
+                      aria-hidden="true"
+                      className={`text-[10px] transition-transform ${open ? "rotate-180" : ""}`}
+                      style={{ color: "var(--text-faint)" }}
+                    >
+                      ↓
                     </span>
                   </button>
                   {open && (
@@ -99,11 +100,7 @@ export default function SiteHeader() {
                               </span>
                               <span style={{ color: active ? "var(--text)" : "var(--text-dim)" }}>{lab.title}</span>
                             </span>
-                            {active && (
-                              <span className="text-xs" style={{ color: "var(--accent)" }}>
-                                ●
-                              </span>
-                            )}
+                            {active && <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--accent)" }} />}
                           </Link>
                         );
                       })}

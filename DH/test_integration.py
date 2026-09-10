@@ -46,31 +46,70 @@ def test_message():
 
 
 def test_file():
+    cases = [b"", b"A", b"B" * (64 * 1024 - 1), b"C" * (64 * 1024),
+             b"D" * (64 * 1024 + 1)]
+    for content in cases:
+        port = free_port()
+        server = start_server(port)
+        with tempfile.NamedTemporaryFile("wb", suffix=".bin", delete=False) as f:
+            f.write(content)
+            tmp = Path(f.name)
+        saved_line = ""
+        try:
+            client = subprocess.run([sys.executable, "encrypt_client.py",
+                                     "--file", str(tmp), "--port", str(port)],
+                                    cwd=HERE, text=True, capture_output=True, timeout=30)
+            rest = server.communicate(timeout=30)[0]
+            print(client.stdout, end="")
+            print(rest, end="")
+            saved_line = next((line for line in rest.splitlines() if line.startswith("FILE_SAVED ")), "")
+            saved = Path(saved_line.removeprefix("FILE_SAVED ")) if saved_line else None
+            checks = [client.returncode == 0,
+                      "SERVER_ACK PASS" in client.stdout,
+                      f"FILE_SIZE {len(content)}" in client.stdout,
+                      f"FILE_SIZE {len(content)}" in rest,
+                      saved is not None and saved.exists() and saved.read_bytes() == content]
+            if not all(checks):
+                print(client.stderr)
+                raise SystemExit(f"INTEGRATION FAIL (file size={len(content)})")
+        finally:
+            tmp.unlink(missing_ok=True)
+            if saved_line:
+                Path(saved_line.removeprefix("FILE_SAVED ")).unlink(missing_ok=True)
+
+
+def test_file_rejects_size_mismatch():
+    from dh_socket_common import send_file_chunks, send_frame
+    from encrypt_client import connect_and_handshake
+
     port = free_port()
     server = start_server(port)
-    content = ("文件传输测试内容 1234567890 ABCDEFG。" * 500).encode("utf-8")
-    with tempfile.NamedTemporaryFile("wb", suffix=".txt", delete=False) as f:
-        f.write(content)
-        tmp = Path(f.name)
+    sock = None
     try:
-        client = subprocess.run([sys.executable, "encrypt_client.py",
-                                 "--file", str(tmp), "--port", str(port)],
-                                cwd=HERE, text=True, capture_output=True, timeout=30)
-        rest = server.communicate(timeout=30)[0]
-        print(client.stdout, end="")
-        print(rest, end="")
-        saved = RECEIVED / tmp.name
-        checks = [client.returncode == 0,
-                  "SERVER_ACK PASS" in client.stdout,
-                  "FILE " in client.stdout,
-                  "FILE_SAVED " in rest,
-                  saved.exists() and saved.read_bytes() == content]
-        if not all(checks):
-            print(client.stderr)
-            raise SystemExit("INTEGRATION FAIL (file)")
+        sock, _, tkey, mac_key, session, transport = connect_and_handshake(
+            "127.0.0.1", port)
+        send_frame(sock, {"type": "file_meta", "filename": "../size-mismatch.bin",
+                          "size": 1, "encrypted": True, "session": session, "seq": 0})
+        send_file_chunks(sock, b"TOO LONG", tkey, mac_key, transport)
+        sock.close()
+        sock = None
+        rest = server.communicate(timeout=10)[0]
+        part_files = list(RECEIVED.glob(".part-*"))
+        ok = (server.returncode != 0
+              and "文件超过声明大小" in rest
+              and "FILE_SAVED" not in rest
+              and not part_files)
+        print(f"[{'PASS' if ok else 'FAIL'}] file size mismatch rejected")
+        if not ok:
+            print(rest)
+            raise SystemExit("INTEGRATION FAIL (file size mismatch)")
     finally:
-        tmp.unlink(missing_ok=True)
-        (RECEIVED / tmp.name).unlink(missing_ok=True)
+        if sock is not None:
+            sock.close()
+        if server.poll() is None:
+            server.kill()
+        for part in RECEIVED.glob(".part-*"):
+            part.unlink(missing_ok=True)
 
 
 def test_cipher():
@@ -175,6 +214,7 @@ def test_transport():
 def main():
     test_message()
     test_file()
+    test_file_rejects_size_mismatch()
     test_cipher()
     test_pubkey()
     test_digest()

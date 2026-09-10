@@ -52,15 +52,16 @@ LIGHT = Palette(
 
 def stylesheet(p: Palette) -> str:
     return f"""
-    * {{ font-family: 'PingFang SC', 'Songti SC', 'Helvetica Neue'; color: {p.text}; }}
+    * {{ font-family: 'Microsoft YaHei UI', 'PingFang SC', 'Noto Sans CJK SC', 'Segoe UI'; color: {p.text}; }}
     QMainWindow, QWidget#root, QStackedWidget, QScrollArea, QScrollArea > QWidget > QWidget {{
         background: {p.background};
     }}
+    QFrame#sidebar {{ background: {p.surface}; border-right: 1px solid {p.border}; }}
     QFrame#conversationPane {{ background: {p.surface}; border-right: 1px solid {p.border}; }}
     QFrame#chatPane {{ background: {p.background}; }}
     QFrame#inspectorPane {{ background: {p.surface}; border-left: 1px solid {p.border}; }}
     QPushButton#conversationItem {{ background: transparent; border: 0; border-radius: 10px; text-align: left; min-height: 58px; }}
-    QPushButton#conversationItem:hover {{ background: {p.surface_2}; }}
+    QPushButton#conversationItem:hover {{ background: {p.surface_2}; border-color: transparent; }}
     QLabel#avatar {{ background: {p.primary}; color: {p.background}; border-radius: 18px; font-size: 16px; font-weight: 800; }}
     QFrame#systemMessage {{ background: {p.surface}; border: 1px solid {p.border}; border-radius: 12px; max-width: 640px; }}
     QFrame#composer {{ background: {p.surface}; border: 1px solid {p.border}; border-radius: 12px; min-height: 44px; }}
@@ -68,7 +69,8 @@ def stylesheet(p: Palette) -> str:
     QTextBrowser#assistantBubble {{ background: {p.surface}; color: {p.text}; border: 1px solid {p.border}; border-radius: 14px; padding: 10px 14px; font-size: 14px; }}
     QTextBrowser#assistantBubble a {{ color: {p.primary}; }}
     QTextBrowser#assistantBubble code {{ background: {p.surface_2}; color: {p.primary_2}; }}
-    QFrame.card:hover {{ border-color: {p.primary}; }}
+    QFrame[class="card"] {{ background: {p.surface}; border: 1px solid {p.border}; border-radius: 12px; }}
+    QFrame[class="card"]:hover {{ border-color: {p.primary}; }}
     QLabel#brand {{ color: {p.primary}; font-size: 22px; font-weight: 800; letter-spacing: 2px; }}
     QLabel#eyebrow {{ color: {p.primary}; font-size: 11px; font-weight: 700; letter-spacing: 2px; }}
     QLabel#pageTitle {{ font-size: 30px; font-weight: 800; }}
@@ -84,6 +86,7 @@ def stylesheet(p: Palette) -> str:
         border-radius: 8px; background: {p.surface_2}; color: {p.text}; font-weight: 600;
     }}
     QPushButton:hover {{ background: {p.surface_3}; border-color: {p.primary}; }}
+    QPushButton:focus {{ border: 1px solid {p.primary}; }}
     QPushButton:pressed {{ background: {p.primary}; color: {p.background}; }}
     QPushButton:disabled {{ color: {p.muted}; background: {p.surface}; }}
     QPushButton#primary {{ background: {p.primary}; color: {p.background}; border: 0; }}
@@ -96,15 +99,21 @@ def stylesheet(p: Palette) -> str:
         background: {p.surface_2}; border: 1px solid {p.border}; border-radius: 8px;
         padding: 9px 12px; selection-background-color: {p.primary};
     }}
-    QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus, QComboBox:focus {{ border: 2px solid {p.primary}; padding: 8px 11px; }}
-    QComboBox QAbstractItemView {{ background: {p.surface}; border: 1px solid {p.border}; selection-background-color: {p.primary}; }}
-    QProgressBar {{ background: {p.surface_2}; border: 0; border-radius: 4px; height: 8px; text-visible: false; }}
+    QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus, QComboBox:focus {{ border: 1px solid {p.primary}; }}
+    QComboBox::drop-down {{ width: 28px; border: 0; border-left: 1px solid {p.border}; }}
+    QComboBox QAbstractItemView {{ background: {p.surface}; border: 1px solid {p.border}; selection-background-color: {p.primary}; padding: 4px; }}
+    QProgressBar {{ background: {p.surface_2}; border: 0; border-radius: 4px; height: 8px; }}
     QProgressBar::chunk {{ background: {p.primary}; border-radius: 4px; }}
-    QPlainTextEdit#console {{ background: #050b13; color: {p.primary_2}; border: 1px solid {p.border}; font-family: 'Menlo', 'Monaco'; font-size: 12px; }}
+    QPlainTextEdit#console {{ background: #050b13; color: {p.primary_2}; border: 1px solid {p.border}; font-family: 'Cascadia Mono', 'Consolas', 'Menlo', 'Monaco'; font-size: 12px; }}
     QTableWidget {{ background: {p.surface}; border: 1px solid {p.border}; gridline-color: {p.border}; alternate-background-color: {p.surface_2}; }}
     QHeaderView::section {{ background: {p.surface_2}; color: {p.muted}; border: 0; padding: 8px; font-weight: 700; }}
     QTableWidget::item:selected {{ background: {p.primary}; color: {p.background}; }}
-    QScrollBar:vertical {{ width: 8px; background: {p.background}; }}
+    QScrollBar:vertical {{ width: 9px; background: transparent; margin: 2px 0; }}
     QScrollBar::handle:vertical {{ background: {p.border}; border-radius: 4px; min-height: 30px; }}
+    QScrollBar::handle:vertical:hover {{ background: {p.muted}; }}
+    QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical, QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: transparent; height: 0; }}
+    QScrollBar:horizontal {{ height: 9px; background: transparent; margin: 0 2px; }}
+    QScrollBar::handle:horizontal {{ background: {p.border}; border-radius: 4px; min-width: 30px; }}
+    QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal, QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{ background: transparent; width: 0; }}
     QToolTip {{ background: {p.surface_3}; color: {p.text}; border: 1px solid {p.border}; padding: 5px; }}
     """

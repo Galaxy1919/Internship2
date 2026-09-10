@@ -268,8 +268,8 @@ class AgentPage(QWidget):
         self.add_user(text)
         self._begin_work()
         self.send_btn.setEnabled(False)
-        self.connection.setText("● 编排中…")
-        self.status.setText("正在调用密码原语并编排…")
+        self.connection.setText("● 编排中...")
+        self.status.setText("正在调用密码原语并编排...")
         config = AgentConfig(
             self.settings.value("base_url", ""),
             self.settings.value("api_key", ""),
@@ -285,14 +285,14 @@ class AgentPage(QWidget):
 
     def on_step(self, step: dict):
         if step["type"] == "thought":
-            self._append_work(f"\n🧠 {step['content']}\n")
+            self._append_work(f"\nTHINK {step['content']}\n")
         else:
             name = step["name"]
             args_s = json.dumps(step["args"], ensure_ascii=False)
             res = step["result"]
-            res_s = res if len(res) <= 90 else res[:90] + "…"
-            icon = "✅" if step["ok"] else "⚠️"
-            self._append_work(f"\n{icon} `{name}` {args_s}\n\n　→ `{res_s}`\n")
+            res_s = res if len(res) <= 90 else res[:90] + "..."
+            status = "PASS" if step["ok"] else "FAIL"
+            self._append_work(f"\n{status} `{name}` {args_s}\n\n  -> `{res_s}`\n")
 
     def on_answer(self, text: str):
         self._finish_work(text)

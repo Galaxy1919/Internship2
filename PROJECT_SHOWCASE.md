@@ -46,15 +46,15 @@
 - **动态传输密码**：aes/des/rc4/ca 可选，密钥由 DH 派生
 - **认证 DH（防中间人）**：Bob 用长期 SM2 身份密钥对 DH 交换做签名，Alice 验签
 - **重放保护**：每个 JSON 帧带递增 seq 序号，服务端拒绝重复/乱序帧
-- **文件传输**：64KB 分块加密 + HMAC，末尾空帧做 EOF
+- **文件传输**：客户端流式读取，64KB 分块加密 + HMAC，服务端校验声明大小并使用临时文件原子落盘，末尾空帧做 EOF
 - **公钥反向流**：RSA/ElGamal/SM2（解密端生成密钥对，公钥发给加密端）
 - **MD5 摘要校验** + **ECDH 密钥交换**
 
 ### 2.4 跨语言（C ↔ Python）
 
-- C 版 SM2（自研 256-bit 大整数库 `bn.c`）+ 双重置换 + Autokey
-- Python↔C 密文互操作：双向加解密往返均通过，证明两种语言实现等价
-- 基准：C 比 Python 快 1.4x（见 §5 的诚实解释）
+- C 版 SM2（自研 256-bit 大整数库 `bn.c`）+ Autokey-plaintext + 双重置换
+- SM2 Python↔C 密文互操作：双向加解密往返均通过，证明两种语言实现等价
+- 基准：`sm2_cli bench` 区分 C 单进程循环与 Python 调 C CLI 的 subprocess 成本，`sm2_cli batch` 支持常驻进程批量调用
 
 ### 2.5 智能 Agent（系统内密码学应用编排器）
 
@@ -77,7 +77,7 @@
 | 标准库交叉验证 | `verify.py` | MD5/RC4/CA 与标准库一致 |
 | 双机端到端 | `DH/test_integration.py` | 全帧类型往返一致 |
 | 安全信道 | `DH/test_security.py` | 认证/MITM/重放全部拦截 |
-| 跨语言 | `publicKey/SM2/interop.py` | C 与 Python 结果一致 |
+| C 实现 | `c_verify.py` | SM2 跨语言互操作 + Autokey/双重置换 C 自检 |
 
 ---
 
@@ -157,7 +157,7 @@ python3 encrypt_client.py "绝密消息" --port 39000             # 攻击被识
 | 认证 DH 为什么能防中间人？ | 签名绑定整个交换 transcript，中间人无法伪造 Bob 的签名，篡改公开值验签必失败。 |
 | 为什么还实现 MD5？ | MD5 已不适合安全用途，但适合做单向散列的历史教学和雪崩效应实验。 |
 | 重放保护怎么做？ | 每个帧带递增序号，接收方校验严格递增，重复帧被拒。 |
-| C 为什么只快 1.4x？ | Python 的大整数运算本身是 CPython 的 C 后端，瓶颈（模逆/模乘）已在 C 里，所以手写 C 优势有限——这恰恰说明现代 Python 密码库的性能也来自底层 C。 |
+| 为什么 C CLI 路径可能比 Python 慢？ | CLI 基准包含 subprocess 启动、hex 转换和管道 I/O；Python 大整数本身由 CPython C 后端优化。项目已用 `sm2_cli bench` 单独统计 C 进程内循环耗时；当前 C 实现保留经过验证的仿射点乘。 |
 | SM2 有什么特别？ | ZA 预处理把用户身份 ID 和公钥一起哈希进签名，绑定身份、防跨用户重放。 |
 | 原始 DH 能不能防中间人？ | 不能。原始 DH 不认证身份；需要数字签名或证书（本项目用 SM2 签名做认证 DH）。 |
 
@@ -170,7 +170,8 @@ cd /Users/mac/code/Internship2
 python3 test_vectors.py                       # 官方向量：AES/DES/SM3
 cd DH && python3 test_integration.py          # 双机端到端：全帧类型
 python3 test_security.py                      # 安全信道：认证/MITM/重放
-cd ../publicKey/SM2 && python3 interop.py --selftest   # 跨语言互操作
+cd .. && python3 c_verify.py                  # C 实现：SM2 互操作 + Autokey/双重置换
+python3 run_tests.py                          # 以上项目验收的统一入口
 ```
 
-全部 PASS 即证明：算法与标准一致、双机链路正确、安全防御有效、跨语言等价——一句话说完整个项目。
+全部 PASS 即证明：算法与标准一致、双机链路正确、安全防御有效、C 实现可编译并通过互操作/自检——一句话说完整个项目。

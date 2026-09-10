@@ -1,12 +1,14 @@
 """解密端（TCP 服务端）：交换 DH 公开值，验证会话并按帧类型分派（消息/文件/对称密码/公钥/摘要/ECDH）。"""
 import argparse
 import json
+import os
 import socket
+import tempfile
 from pathlib import Path
 from dh_socket_common import (
     P, G, public_value, shared_secret, derive_material,
     send_frame, recv_frame, decrypt_message, transcript_hash,
-    recv_file_chunks, TRANSPORT_CIPHERS,
+    recv_file_to, TRANSPORT_CIPHERS, MAX_FILE_SIZE,
     sign_transcript, BOB_IDENTITY_D, BOB_IDENTITY_PUB, BOB_IDENTITY_PUB_STR,
 )
 from cipher_registry import (
@@ -21,6 +23,7 @@ from cipher_registry import (
 
 BOB_PRIVATE = 5678
 OUT_DIR = Path(__file__).resolve().parent / "received"
+CONNECTION_TIMEOUT = 5
 
 
 def serve(host="127.0.0.1", port=29090, once=True):
@@ -32,6 +35,7 @@ def serve(host="127.0.0.1", port=29090, once=True):
         while True:
             conn, address = server.accept()
             with conn:
+                conn.settimeout(CONNECTION_TIMEOUT)
                 hello = recv_frame(conn)
                 if hello.get("type") != "dh_hello" or hello.get("p") != P or hello.get("g") != G:
                     raise ValueError("DH 公共参数不一致")
@@ -71,23 +75,50 @@ def serve(host="127.0.0.1", port=29090, once=True):
                         break
 
                     elif t == "file_meta":
-                        filename = Path(packet.get("filename", "unnamed")).name
-                        encrypted = bool(packet.get("encrypted", True))
-                        data = recv_file_chunks(conn,
-                                                tkey if encrypted else None,
-                                                mac_key if encrypted else None, transport)
+                        raw_filename = packet.get("filename", "unnamed")
+                        expected_size = packet.get("size")
+                        if not isinstance(raw_filename, str) or not raw_filename:
+                            raise ValueError("文件名字段非法")
+                        if not isinstance(expected_size, int) or isinstance(expected_size, bool):
+                            raise ValueError("文件大小字段非法")
+                        if expected_size < 0 or expected_size > MAX_FILE_SIZE:
+                            raise ValueError("文件大小超过安全上限")
+                        filename = Path(raw_filename).name
+                        if filename in {"", ".", ".."}:
+                            raise ValueError("文件名字段非法")
+                        encrypted = packet.get("encrypted", True)
+                        if not isinstance(encrypted, bool):
+                            raise ValueError("文件加密标记非法")
                         OUT_DIR.mkdir(exist_ok=True)
-                        out_path = OUT_DIR / filename
-                        out_path.write_bytes(data)
+                        fd, temp_name = tempfile.mkstemp(prefix=".part-", dir=OUT_DIR)
+                        temp_path = Path(temp_name)
+                        try:
+                            with os.fdopen(fd, "wb") as file_obj:
+                                received_size = recv_file_to(
+                                    conn, file_obj, expected_size,
+                                    tkey if encrypted else None,
+                                    mac_key if encrypted else None, transport)
+                            out_path = OUT_DIR / filename
+                            if out_path.exists():
+                                base = OUT_DIR / f"{out_path.stem}-{session}{out_path.suffix}"
+                                out_path = base
+                                counter = 2
+                                while out_path.exists():
+                                    out_path = OUT_DIR / f"{base.stem}-{counter}{base.suffix}"
+                                    counter += 1
+                            os.replace(temp_path, out_path)
+                        except Exception:
+                            temp_path.unlink(missing_ok=True)
+                            raise
                         print(f"CLIENT {address[0]}:{address[1]}")
                         print(f"DH_SHARED {secret}")
                         print(f"SESSION {session}")
                         print(f"TRANSPORT {transport}")
                         print(f"FILE {filename}")
-                        print(f"FILE_SIZE {len(data)}")
+                        print(f"FILE_SIZE {received_size}")
                         print(f"FILE_SAVED {out_path}")
                         send_frame(conn, {"type": "file_ack", "session": session,
-                                          "status": "PASS", "size": len(data)})
+                                          "status": "PASS", "size": received_size})
                         break
 
                     elif t == "cipher_message":

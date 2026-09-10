@@ -8,8 +8,10 @@ Python 版（main.py）与 C 版（sm2.c + sm2_cli）是同一算法（sm2p256v1
   Python 密文：04 || x1(32) || y1(32) || C3(32) || C2(明文长)   （C1 带 04 前缀，C3 在 C2 前）
   C     密文：      x1(32) || y1(32) || C2(明文长) || C3(32)     （C1 无前缀，C2 在 C3 前）
 
-本模块提供两套格式互转 + 调 C CLI 的桥接函数，并做跨语言往返验证与性能基准，
-证明「两种语言实现等价」且「C 更快」。
+本模块提供两套格式互转 + 调 C CLI 的桥接函数，并做跨语言往返验证与基准。
+基准会区分 C 单进程循环与 Python 反复启动 C CLI 的总耗时，避免把 subprocess
+启动和十六进制 I/O 成本误算成 C 算法本体耗时；sm2_cli 另有 batch 模式，供
+后续以常驻子进程方式减少重复启动成本。
 
 用法：
   python3 interop.py --selftest    # 跨语言往返验证（C 加密→Py 解密；Py 加密→C 解密）
@@ -83,6 +85,17 @@ def c_decrypt(d_hex, c_ct: bytes) -> bytes:
     return bytes.fromhex(_run("dec", d_hex, c_ct.hex()))
 
 
+def c_bench(n_iter=20):
+    fields = {}
+    for line in _run("bench", str(n_iter)).splitlines():
+        key, _, value = line.partition(" ")
+        fields[key] = value.strip()
+    try:
+        return float(fields["total_ms"]) / 1000.0, float(fields["per_round_ms"])
+    except (KeyError, ValueError) as exc:
+        raise RuntimeError(f"C bench 输出格式异常: {fields!r}") from exc
+
+
 # ---------------------------------------------------------------------------
 # 跨语言往返验证
 # ---------------------------------------------------------------------------
@@ -124,28 +137,32 @@ def selftest() -> int:
 def _bench(n_iter=20):
     plaintext = "benchmark message 1234567890".encode("utf-8")
 
-    # C 基准：一次 keygen + N 次 enc/dec
+    # C 单进程基准：C 进程内部循环，排除 Python subprocess 启动成本
+    c_inner_total, c_inner_per_ms = c_bench(n_iter)
+
+    # C CLI 总耗时：每次 enc/dec 都经 subprocess，体现当前桥接层真实调用成本
     d_hex, px, py = c_keygen()
     t0 = time.perf_counter()
     for _ in range(n_iter):
         c_decrypt(d_hex, c_encrypt(px, py, plaintext))
-    c_total = time.perf_counter() - t0
+    c_cli_total = time.perf_counter() - t0
 
-    # Python 基准：一次 keygen + N 次 enc/dec
+    # Python 基准：同一进程内调用 Python 实现；其大整数运算底层由 CPython C 代码完成
     d_int, pub = PySM2.generate_keypair()
     t0 = time.perf_counter()
     for _ in range(n_iter):
         PySM2.decrypt_pke(PySM2.encrypt_pke(plaintext, pub), d_int)
     py_total = time.perf_counter() - t0
 
-    print(f"C       {n_iter} 次加解密: {c_total*1000:8.1f} ms  ({c_total/n_iter*1000:.2f} ms/次)")
-    print(f"Python  {n_iter} 次加解密: {py_total*1000:8.1f} ms  ({py_total/n_iter*1000:.2f} ms/次)")
-    print(f"加速比: C 比 Python 快 {py_total/c_total:.1f}x")
-    return c_total, py_total
+    print(f"C 单进程循环      {n_iter} 次加解密: {c_inner_total*1000:8.1f} ms  ({c_inner_per_ms:.2f} ms/次)")
+    print(f"C CLI 子进程路径  {n_iter} 次加解密: {c_cli_total*1000:8.1f} ms  ({c_cli_total/n_iter*1000:.2f} ms/次)")
+    print(f"Python 进程内调用 {n_iter} 次加解密: {py_total*1000:8.1f} ms  ({py_total/n_iter*1000:.2f} ms/次)")
+    print("说明: C CLI 子进程路径包含进程启动、hex 转换和管道 I/O；C 单进程循环更接近算法本体耗时。")
+    return c_inner_total, c_cli_total, py_total
 
 
 def bench() -> int:
-    print("SM2 加解密基准（C vs Python，纯 Python 大整数 vs C 手写 256-bit）：")
+    print("SM2 加解密基准（区分 C 本体循环与 CLI 调用成本）：")
     _bench(20)
     return 0
 

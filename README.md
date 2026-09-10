@@ -66,7 +66,7 @@ Internship2/
    - 重放保护：握手后每个 JSON 帧带递增 `seq` 序号，解密端校验严格递增，重复/乱序帧被拒。
    - 传输密码可动态指定（默认 `aes`，可选 `des`/`rc4`/`ca`）：整个信封用「DH 派生的密钥 + 所选传输密码 + HMAC」
      加密后再传，网络上传的永远是密文。因为密钥由 DH 协商，任意所选传输密码都满足「至少一个密码用 DH 交换密钥」。
-   - 文件传输：64KB 分块，每块传输密码加密 + HMAC（sha256 标签 64 字节 hex 拼在密文尾部），末尾空帧做 EOF。
+   - 文件传输：客户端流式读取并按 64KB 分块，每块传输密码加密 + HMAC（sha256 标签 64 字节 hex 拼在密文尾部），末尾空帧做 EOF；服务端校验声明大小、总大小上限和临时文件完整性后再落盘。
 
 2. 适配层（`DH/cipher_registry.py`）
    - 用 importlib 动态加载所有密码模块（详见第 7 节陷阱）。
@@ -200,8 +200,11 @@ cd DH && python3 test_integration.py
 # 安全信道测试（认证 DH / MITM 攻防 / 重放保护）
 cd DH && python3 test_security.py
 
-# C 跨语言互操作 + 基准（先编译 C 版 SM2）
-cd publicKey/SM2 && cc -O2 -o sm2_cli sm2_cli.c sm2.c sm3.c bn.c && python3 interop.py --selftest
+# 统一验收入口（交叉验证 / 官方向量 / 双机 / 安全 / C）
+python3 run_tests.py
+
+# C 实现统一验证（SM2 互操作 + Autokey/双重置换 CLI/桥接自检）
+python3 c_verify.py
 
 # web 前端（队友负责）
 cd web && npm install && npm run dev   # http://localhost:3900
@@ -244,7 +247,7 @@ py desktop/run_desktop.py
 - `算法实验`：选择现有算法，输入明文和密钥，调用原有实现并显示密文、解密结果和往返验证。
 - `双机信道`：启动现有 `DH/decrypt_server.py` 与 `DH/encrypt_client.py`，执行消息或文件传输，显示 Alice、Bob、DH、传输密码、HMAC 和解密状态。
 - `攻击实验`：调用 `publicKey/Elgamal/main.py --demo`，观察随机数 `k` 复用导致 `r` 相同并恢复私钥的教学实验。
-- `验证中心`：在后台线程执行 `verify.py` 和 `DH/test_integration.py`，避免测试过程冻结界面。
+- `验证中心`：在后台线程执行 `run_tests.py`，统一覆盖交叉验证、官方向量、双机集成、安全信道和 C 实现验证，避免测试过程冻结界面。
 - `智能助手`：系统内密码学应用编排器（agent）。在设置中填写 API 地址、模型和 API Key 后，助手调用 10 个密码原语（对称/公钥/SM2 签名验签/散列/HMAC），把它们编排成高层应用流程（混合加密、数字签名、加密保险箱），并在对话区实时展示编排步骤。工具层封装为 `agent_cli.py`（CLI + 统一 JSON 输出），循环用 ReAct。
 
 ### 10.3 智能助手配置
@@ -351,7 +354,7 @@ API Key 使用密码框显示，并保存到本机 `QSettings`，不会写入本
 
 最后运行验证中心，说明：
 
-> 验证中心直接执行项目已有的 `verify.py` 和 `DH/test_integration.py`。前者验证 MD5、RC4、CA 等算法，后者覆盖消息、文件、对称密码、公钥密码、摘要校验、ECDH 和动态传输密码。这里显示的是本次真实运行结果。
+> 验证中心通过 `run_tests.py` 统一执行交叉验证、官方向量、双机端到端、安全信道和 C 实现验证。这里显示的是本次真实运行结果。
 
 ### 11.6 智能助手如何讲
 
@@ -375,4 +378,3 @@ API Key 使用密码框显示，并保存到本机 `QSettings`，不会写入本
 | RSA 能不能加密任意大文件？ | 当前是教学用裸 RSA，只适合短消息；实际文件应使用混合加密，由 RSA/SM2 保护会话密钥。 |
 | 为什么桌面端不重写算法？ | 为了保留团队原有实现和测试结果，桌面端负责统一调用和展示，降低对已完成代码的影响。 |
 | 桌面端和网页端是什么关系？ | `web/` 是原有独立网页端，`desktop/` 是新增的本地桌面操作端，两者共用项目算法思想，但不互相替换。 |
-

@@ -15,6 +15,6 @@ python3 desktop/run_desktop.py
 - 单机算法：统一实验入口，重点展示 AES/RSA/DH 的过程说明
 - 双机信道：调用仓库原有 `DH/decrypt_server.py` 与 `DH/encrypt_client.py`
 - 攻击实验：调用 ElGamal 原有 `--demo`，展示随机数复用风险
-- 验证中心：实际执行 `verify.py` 与 `DH/test_integration.py`
+- 验证中心：实际执行根目录 `run_tests.py`，覆盖交叉验证、官方向量、双机集成、安全信道和 C 实现
 
 说明：桌面端新增代码优先保持只读复用旧模块；算法目录、`web/` 和双机协议不在本次桌面端中重写。

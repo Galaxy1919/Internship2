@@ -9,17 +9,17 @@
   --panel: rgba(255, 255, 255, 0.03);
   --panel-strong: rgba(255, 255, 255, 0.055);
   --border: rgba(148, 163, 184, 0.14);
-  --border-bright: rgba(74, 222, 128, 0.35);
+  --border-bright: rgba(74, 222, 128, 0.45);
   --text: #e2e8f0;
   --text-dim: #8b93a7;
   --text-faint: #565d6f;
   --accent: #4ade80;
   --accent-dim: #22c55e;
   --accent-ink: #052e12;
-  --cyan: #22d3ee;
+  --cyan: #67e8f9;
   --amber: #fbbf24;
   --red: #f87171;
-  --violet: #a78bfa;
+  --violet: #c4b5fd;
 }
 
 html,
@@ -31,8 +31,7 @@ body {
 
 body {
   background-image:
-    radial-gradient(1100px 500px at 15% -10%, rgba(34, 197, 94, 0.07), transparent 60%),
-    radial-gradient(900px 480px at 95% -5%, rgba(34, 211, 238, 0.05), transparent 55%),
+    radial-gradient(900px 420px at 15% -10%, rgba(34, 197, 94, 0.045), transparent 60%),
     linear-gradient(rgba(148, 163, 184, 0.035) 1px, transparent 1px),
     linear-gradient(90deg, rgba(148, 163, 184, 0.035) 1px, transparent 1px);
   background-size: 100% 100%, 100% 100%, 44px 44px, 44px 44px;
@@ -46,10 +45,10 @@ body {
 /* ---------- components ---------- */
 @layer components {
   .panel {
-    @apply rounded-xl border;
+    @apply rounded-lg border;
     background: var(--panel);
     border-color: var(--border);
-    backdrop-filter: blur(6px);
+    backdrop-filter: blur(4px);
   }
   .panel-title {
     @apply mb-1 flex items-center gap-2 text-sm font-semibold tracking-wide;
@@ -65,7 +64,7 @@ body {
     color: var(--text-dim);
   }
   .input {
-    @apply w-full rounded-lg border px-3 py-2 text-sm outline-none transition;
+    @apply w-full rounded-md border px-3 py-2 text-sm outline-none transition-colors;
     background: rgba(2, 6, 17, 0.6);
     border-color: var(--border);
     color: var(--text);
@@ -74,20 +73,24 @@ body {
     border-color: var(--border-bright);
     box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.12);
   }
+  .input:focus-visible,
+  .btn:focus-visible,
+  .navlink:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
   .input::placeholder {
     color: var(--text-faint);
   }
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition active:scale-[0.98];
+    @apply inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-semibold transition-colors active:scale-[0.98];
   }
   .btn-primary {
-    background: linear-gradient(180deg, #4ade80, #22c55e);
+    background: var(--accent);
     color: var(--accent-ink);
-    box-shadow: 0 2px 14px rgba(34, 197, 94, 0.28);
   }
   .btn-primary:hover {
-    box-shadow: 0 2px 20px rgba(34, 197, 94, 0.45);
-    filter: brightness(1.06);
+    background: #86efac;
   }
   .btn-ghost {
     border: 1px solid var(--border);
@@ -99,7 +102,7 @@ body {
     border-color: var(--border-bright);
   }
   .chip {
-    @apply inline-flex items-center gap-1 rounded-md px-2 py-0.5 font-mono text-xs;
+    @apply inline-flex items-center gap-1 rounded px-2 py-0.5 font-mono text-xs;
     background: rgba(74, 222, 128, 0.1);
     color: var(--accent);
     border: 1px solid rgba(74, 222, 128, 0.22);
@@ -162,6 +165,17 @@ body {
 .navlink:hover {
   color: var(--text);
   background: rgba(255, 255, 255, 0.05);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }
 
 /* 矩阵表格 cell */

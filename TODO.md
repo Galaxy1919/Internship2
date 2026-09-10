@@ -4,22 +4,21 @@
 
 ## 待办
 
-- [ ] 1. 桌面「验证中心」纳入新测试
-      `desktop/main_window.py` 目前只跑 `verify.py` + `DH/test_integration.py`，
-      需补上 `test_vectors.py`（官方向量）与 `DH/test_security.py`（安全信道），
-      让"一键验证"覆盖 PROJECT_SHOWCASE.md 第 6 节的全部 4 条。
+- [x] 1. 桌面「验证中心」纳入新测试
+      `desktop/main_window.py` 已通过根目录 `run_tests.py` 统一纳入 `verify.py`、
+      `test_vectors.py`、`DH/test_integration.py`、`DH/test_security.py` 与 `c_verify.py`，
+      让"一键验证"覆盖官方向量、交叉验证、双机集成、安全信道和 C 实现验证。
 
-- [ ] 2. C 实现接入补齐（double_transposition + Autokey）
-      目前只有 SM2 做了跨语言互操作（`publicKey/SM2/interop.py`），
-      `double_transposition.c` 与 `PolyalphabeticSubstitution/main.c` 能编译但未接入
-      （无 CLI / 无互操作 / 无基准）。要么补跨语言验证，要么在展示里明确
-      "跨语言接入目前只 SM2"，避免答辩被追问露怯。
+- [x] 2. C 实现接入补齐（SM2 + Autokey + double_transposition）
+      已新增 `c_verify.py`：统一编译 SM2 / Autokey / 双重置换 C 实现，运行 SM2
+      点乘自检、Python↔C 互操作、SM2 单进程 bench/batch、Autokey 桥接自检、双重置换 selftest
+      与桥接自检。说明口径：SM2 是同算法跨语言互操作；Autokey C 对应
+      Autokey-plaintext；双重置换 C 是扩展算法，不宣称与 Python 列置换互操作。
 
-- [ ] 3. 清理死代码 agent_context.py
-      `collect_context` / `compose_prompt` 是旧 agent（读 README/TODO 的问答）用的，
-      新编排器已不再 import。删除或标注废弃。
+- [x] 3. 清理死代码 agent_context.py
+      `collect_context` / `compose_prompt` 没有被现有代码引用，已删除旧模块。
 
-- [ ] 4. 前端细节优化（web + desktop）
+- [x] 4. 前端细节优化（web + desktop）
       清理界面里 AI 味重的 emoji 和装饰，统一细节（文案、间距、提示语、配色一致性），
       让界面更克制、专业。
 

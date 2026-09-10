@@ -48,6 +48,8 @@ const TRANSPORTS = [
   ["ca", "CA"],
 ] as const;
 
+const STAGES = ["启动进程", "DH 握手", "派生密钥", "发送数据", "校验结果"];
+
 const BYTES_CIPHERS = new Set(["aes", "des", "rc4", "ca"]);
 
 type Result = {
@@ -116,6 +118,7 @@ export default function DualPage() {
   const serverFileSize = result?.serverOutput?.match(/FILE_SIZE (\d+)/)?.[1];
   const fileOk = mode === "file" ? !!(clientFileSize && serverFileSize && clientFileSize === serverFileSize) : undefined;
   const fileSaved = result?.serverOutput?.match(/FILE_SAVED (.*)/)?.[1];
+  const stageDone = result?.ok ? STAGES.length : loading ? 3 : result ? 2 : 0;
 
   return (
     <div className="space-y-6">
@@ -240,7 +243,7 @@ export default function DualPage() {
 
         <div className="mt-4 flex items-center gap-3">
           <button className="btn btn-primary" onClick={run} disabled={loading}>
-            {loading ? "运行中…" : "▶ 运行双机加解密"}
+            {loading ? "运行中…" : "运行双机加解密"}
           </button>
           {result && !loading && (
             <span className={`chip ${result.ok ? "" : "chip-red"}`}>{result.ok ? "✓ 完成" : "✗ 失败"}</span>
@@ -253,6 +256,39 @@ export default function DualPage() {
         )}
       </div>
 
+      {(loading || result) && (
+        <div className="panel p-5">
+          <div className="panel-title">
+            <span className="dot" style={{ background: loading ? "var(--amber)" : result?.ok ? C : "var(--red)", boxShadow: "none" }} />
+            运行阶段
+            <span className="ml-auto font-mono text-xs font-normal" style={{ color: "var(--text-faint)" }}>
+              {loading ? "处理中" : result?.ok ? "完成" : "失败"}
+            </span>
+          </div>
+          <div className="mt-4 grid gap-2 md:grid-cols-5">
+            {STAGES.map((stage, i) => {
+              const done = i < stageDone;
+              const active = loading && i === stageDone;
+              return (
+                <div
+                  key={stage}
+                  className="rounded-md border px-3 py-2"
+                  style={{
+                    borderColor: done || active ? "rgba(74,222,128,.34)" : "var(--border)",
+                    background: done || active ? "rgba(74,222,128,.06)" : "rgba(2,6,17,.35)",
+                  }}
+                >
+                  <div className="font-mono text-[11px]" style={{ color: done || active ? "var(--accent)" : "var(--text-faint)" }}>
+                    {String(i + 1).padStart(2, "0")}
+                  </div>
+                  <div className="mt-1 text-sm font-medium">{stage}</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* 一致性校验 */}
       {result?.ok && (
         <div className="panel p-5">
@@ -260,7 +296,7 @@ export default function DualPage() {
             <span className="dot" style={{ background: C, boxShadow: `0 0 8px ${C}` }} />
             一致性校验
           </div>
-          <div className="mt-3 flex flex-wrap gap-2">
+          <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             <span className={`chip ${dhOk ? "" : "chip-red"}`}>
               {dhOk ? "✓ DH 共享密钥一致" : "✗ DH 共享密钥不一致"}
             </span>
@@ -284,7 +320,7 @@ export default function DualPage() {
                 {fileOk ? "✓ 文件大小一致" : "✗ 文件大小不一致"}
               </span>
             )}
-            {fileSaved && <span className="chip">📁 {fileSaved}</span>}
+            {fileSaved && <span className="chip">保存到 {fileSaved}</span>}
           </div>
         </div>
       )}

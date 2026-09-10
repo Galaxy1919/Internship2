@@ -10,6 +10,9 @@
 编译（在 sm2_cli.c 所在目录执行）：
     gcc -Wall -Wextra -std=gnu99 -o sm2_cli sm2_cli.c sm2.c sm3.c bn.c
 
+sm2_cli 还提供 bench / batch 模式：bench 用于单进程内循环计时，batch 用于后续
+Python 以常驻子进程方式批量调用，避免每次加解密都重新启动进程。
+
 格式约定（与 cipher_registry 里队友 Python 版保持一致，方便将来直接注册）：
 - public_str = "十进制x:十进制y"（公钥点坐标，冒号分隔十进制整数）
 - private    = int（私钥 d）

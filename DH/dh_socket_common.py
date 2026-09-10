@@ -18,6 +18,8 @@ G = 5
 # 传输层可选密码（bytes 型对称密码；古典字符串密码不适合二进制传输）
 TRANSPORT_CIPHERS = ("aes", "des", "rc4", "ca")
 TRANSPORT_KEY_LEN = {"aes": 16, "des": 8, "rc4": 16, "ca": 16}
+FRAME_SIZE_LIMIT = 1024 * 1024
+BINARY_FRAME_SIZE_LIMIT = 64 * 1024 * 1024
 
 
 def fast_pow(base, exponent, modulus):
@@ -78,7 +80,7 @@ def recv_exact(sock, size):
 
 def recv_frame(sock):
     size = struct.unpack("!I", recv_exact(sock, 4))[0]
-    if size > 1024 * 1024:
+    if size > FRAME_SIZE_LIMIT:
         raise ValueError("单帧数据超过安全上限")
     return json.loads(recv_exact(sock, size).decode())
 
@@ -150,6 +152,7 @@ def parse_pubkey(pub_str):
 
 CHUNK_SIZE = 64 * 1024      # 每块 64KB，避免大文件一次性读入内存
 TAG_LEN = 64                # sha256 hexdigest 长度（HMAC 标签）
+MAX_FILE_SIZE = 256 * 1024 * 1024
 
 def send_bytes(sock, data):
     """发送一个长度前缀的二进制帧（与 send_frame 的 JSON 帧互补，用于大块数据）。"""
@@ -159,7 +162,7 @@ def send_bytes(sock, data):
 def recv_bytes(sock):
     """接收一个长度前缀的二进制帧，返回原始字节。"""
     size = struct.unpack("!I", recv_exact(sock, 4))[0]
-    if size > 64 * 1024 * 1024:
+    if size > BINARY_FRAME_SIZE_LIMIT:
         raise ValueError("单帧数据超过安全上限")
     return recv_exact(sock, size)
 
@@ -173,6 +176,8 @@ def encrypt_chunk(chunk, key, mac_key, cipher_id="aes"):
 
 def decrypt_chunk(blob, key, mac_key, cipher_id="aes"):
     """校验 HMAC 并解密一块数据，返回明文。"""
+    if len(blob) <= TAG_LEN:
+        raise ValueError("文件块长度不足")
     ct, tag = blob[:-TAG_LEN], blob[-TAG_LEN:].decode("ascii")
     expected = hmac.new(mac_key, ct, hashlib.sha256).hexdigest()
     if not hmac.compare_digest(expected, tag):
@@ -189,6 +194,23 @@ def send_file_chunks(sock, data, key=None, mac_key=None, cipher_id="aes"):
     send_bytes(sock, b"")       # 空帧 = EOF 结束标记
 
 
+def send_file_stream(sock, file_obj, size, key=None, mac_key=None, cipher_id="aes"):
+    """从文件对象分块发送文件，不把完整文件读入内存。"""
+    if size < 0 or size > MAX_FILE_SIZE:
+        raise ValueError("文件大小超过安全上限")
+    remaining = size
+    while remaining:
+        chunk = file_obj.read(min(CHUNK_SIZE, remaining))
+        if not chunk:
+            raise IOError("文件在发送过程中长度发生变化")
+        remaining -= len(chunk)
+        payload = encrypt_chunk(chunk, key, mac_key, cipher_id) if (key and mac_key) else chunk
+        send_bytes(sock, payload)
+    if file_obj.read(1):
+        raise IOError("文件在发送过程中长度发生变化")
+    send_bytes(sock, b"")
+
+
 def recv_file_chunks(sock, key=None, mac_key=None, cipher_id="aes"):
     """接收分块字节流直到 EOF 空帧，返回完整字节；每块可选解密。"""
     parts = []
@@ -198,3 +220,24 @@ def recv_file_chunks(sock, key=None, mac_key=None, cipher_id="aes"):
             break
         parts.append(decrypt_chunk(payload, key, mac_key, cipher_id) if (key and mac_key) else payload)
     return b"".join(parts)
+
+
+def recv_file_to(sock, file_obj, expected_size, key=None, mac_key=None, cipher_id="aes"):
+    """接收文件分块并直接写入文件对象，同时校验声明大小。"""
+    if not isinstance(expected_size, int) or isinstance(expected_size, bool):
+        raise ValueError("文件大小字段必须是整数")
+    if expected_size < 0 or expected_size > MAX_FILE_SIZE:
+        raise ValueError("文件大小超过安全上限")
+    received = 0
+    while True:
+        payload = recv_bytes(sock)
+        if not payload:
+            break
+        chunk = decrypt_chunk(payload, key, mac_key, cipher_id) if (key and mac_key) else payload
+        received += len(chunk)
+        if received > expected_size:
+            raise ValueError("实际接收文件超过声明大小")
+        file_obj.write(chunk)
+    if received != expected_size:
+        raise ValueError(f"文件大小不一致：声明 {expected_size}，实际 {received}")
+    return received
