@@ -212,8 +212,17 @@ class AttackPage(QWidget):
         super().__init__(); root=QVBoxLayout(self); root.setContentsMargins(28,28,28,28); root.setSpacing(16)
         root.addWidget(label("ATTACK PLAYGROUND", "eyebrow")); root.addWidget(label("攻击实验", "pageTitle")); root.addWidget(label("基于仓库已有 recover_x_from_reused_k 实现，展示错误随机数使用如何导致私钥泄露。", "muted"))
         flow=card(); fl=QVBoxLayout(flow); fl.setContentsMargins(20,20,20,20); fl.setSpacing(14); fl.addWidget(label("ElGamal nonce reuse", "sectionTitle"));
-        for t in ["两条不同消息", "错误复用同一个 k", "两次签名 r 相同", "恢复 k 与私钥 x", "伪造签名验证"]:
-            fl.addWidget(label("→  " + t, "heroTitle"))
+        titles = ["两条不同消息", "错误复用同一个 k", "两次签名 r 相同", "恢复 k 与私钥 x", "伪造签名验证"]
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(24)  # 两列之间的水平间距
+        grid.setVerticalSpacing(14)  # 两行之间的垂直间距
+
+        for i, t in enumerate(titles):
+            row, col = divmod(i, 2)  # i=0→(0,0), i=1→(0,1), i=2→(1,0) ...
+            item = label("→  " + t, "heroTitle")
+            grid.addWidget(item, row, col)
+
+        fl.addLayout(grid)
         root.addWidget(flow)
         self.out=QPlainTextEdit(); self.out.setObjectName("console"); self.out.setReadOnly(True); root.addWidget(self.out,1)
         b=QPushButton("运行真实攻击演示"); b.setObjectName("danger"); b.clicked.connect(self.run); root.addWidget(b)

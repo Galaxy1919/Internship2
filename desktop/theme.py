@@ -72,7 +72,7 @@ def stylesheet(p: Palette) -> str:
     QLabel#brand {{ color: {p.primary}; font-size: 22px; font-weight: 800; letter-spacing: 2px; }}
     QLabel#eyebrow {{ color: {p.primary}; font-size: 11px; font-weight: 700; letter-spacing: 2px; }}
     QLabel#pageTitle {{ font-size: 30px; font-weight: 800; }}
-    QLabel#heroTitle {{ font-size: 36px; font-weight: 800; }}
+    QLabel#heroTitle {{ font-size: 18px; font-weight: 400; }}
     QLabel#sectionTitle {{ font-size: 17px; font-weight: 700; }}
     QLabel#muted {{ color: {p.muted}; }}
     QLabel#metricValue {{ color: {p.primary}; font-size: 22px; font-weight: 750; }}
