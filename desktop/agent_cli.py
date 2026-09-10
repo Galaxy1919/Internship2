@@ -18,6 +18,7 @@ import argparse
 import hashlib
 import hmac as hmac_mod
 import json
+import secrets
 import sys
 from pathlib import Path
 
@@ -66,7 +67,21 @@ def _key_from_str(cipher: str, key_str: str) -> bytes:
 # 对称密码原语
 # ---------------------------------------------------------------------------
 
+_KEY_LEN = {"aes": 16, "des": 8, "rc4": 16, "ca": 16}
+
+
 def cmd_make_key(args) -> int:
+    if args.kdf == "pbkdf2":
+        if args.cipher not in BYTES_CIPHERS:
+            return fail("PBKDF2 仅适用于 bytes 型密码（aes/des/rc4/ca）")
+        if not args.seed:
+            return fail("PBKDF2 派生需要 --seed 作为口令")
+        salt = bytes.fromhex(args.salt) if args.salt else secrets.token_bytes(16)
+        key = hashlib.pbkdf2_hmac("sha256", args.seed.encode("utf-8"), salt,
+                                  args.iterations, dklen=_KEY_LEN[args.cipher])
+        emit({"cipher": args.cipher, "key": key.hex(), "kdf": "pbkdf2",
+              "salt": salt.hex(), "iterations": args.iterations})
+        return 0
     entry = get(args.cipher)
     key = entry["make_key"](args.seed if args.seed else None)
     emit({"cipher": args.cipher, "key": _key_to_str(args.cipher, key)})
@@ -185,7 +200,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     sp = sub.add_parser("make_key", help="生成对称密码密钥")
     sp.add_argument("--cipher", required=True, choices=SYM_CIPHERS)
-    sp.add_argument("--seed", help="可选：由种子派生密钥（缺省随机）")
+    sp.add_argument("--seed", help="可选：由种子派生密钥（缺省随机；pbkdf2 下作为口令必填）")
+    sp.add_argument("--kdf", choices=["sha256", "pbkdf2"], default="sha256",
+                    help="口令派生方式（pbkdf2 = 加盐 PBKDF2-HMAC-SHA256，防彩虹表）")
+    sp.add_argument("--iterations", type=int, default=100000,
+                    help="PBKDF2 迭代次数（默认 100000）")
+    sp.add_argument("--salt", help="PBKDF2 的盐（hex；解密时传入以复现同一密钥，缺省随机生成）")
     sp.set_defaults(fn=cmd_make_key)
 
     sp = sub.add_parser("sym_encrypt", help="对称加密")

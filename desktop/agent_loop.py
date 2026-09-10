@@ -34,7 +34,7 @@ SYSTEM_PROMPT = """你是运行在密码学实验系统内部的「密码学应�
 编排范例（供参考，不必照搬）：
 - 混合加密（数字信封）：make_key(aes) 得会话密钥 K → sym_encrypt(aes, 消息, K) 得密文 C1 → pubkey_keygen(rsa) 得公钥 P/私钥 S → pubkey_encrypt(rsa, K, P) 得 C2 → 数字信封 = {C2, C1}。解密：pubkey_decrypt(rsa, C2, S) 还原 K → sym_decrypt(aes, C1, K) 还原消息。（会话密钥 K 是 hex 字符串，可直接作为 pubkey_encrypt 的 text 参数。）
 - 数字签名：hash(md5, 消息) 得摘要 H → sign(sm2, H, 私钥, 公钥) 得签名 σ → verify(sm2, H, σ, 公钥) 验签。
-- 加密保险箱：make_key(aes, seed=口令) 得密钥 K → sym_encrypt(aes, 秘密, K) 存密文 → 取回时 sym_decrypt(aes, 密文, K)。"""
+- 加密保险箱：make_key(aes, seed=口令, kdf=pbkdf2) 得密钥 K 与随机盐 salt → sym_encrypt(aes, 秘密, K) 存密文 → 取回时 make_key(aes, seed=口令, kdf=pbkdf2, salt=salt) 复现同一 K → sym_decrypt(aes, 密文, K)。（口令派生密钥务必用 pbkdf2 加盐，不要用 sha256。）"""
 
 
 def execute_tool(name: str, args: dict) -> tuple[str, bool]:

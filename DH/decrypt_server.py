@@ -7,6 +7,7 @@ from dh_socket_common import (
     P, G, public_value, shared_secret, derive_material,
     send_frame, recv_frame, decrypt_message, transcript_hash,
     recv_file_chunks, TRANSPORT_CIPHERS,
+    sign_transcript, BOB_IDENTITY_D, BOB_IDENTITY_PUB, BOB_IDENTITY_PUB_STR,
 )
 from cipher_registry import (
     get as get_cipher,
@@ -41,13 +42,22 @@ def serve(host="127.0.0.1", port=29090, once=True):
                 secret = shared_secret(alice_public, BOB_PRIVATE)
                 tkey, mac_key = derive_material(secret, transport)
                 session = transcript_hash(alice_public, bob_public)
-                send_frame(conn, {"type": "dh_reply", "public": bob_public, "session": session})
+                signature = sign_transcript(BOB_IDENTITY_D, BOB_IDENTITY_PUB,
+                                            alice_public, bob_public)
+                send_frame(conn, {"type": "dh_reply", "public": bob_public,
+                                  "session": session, "signature": signature,
+                                  "identity_pub": BOB_IDENTITY_PUB_STR})
 
                 pubkey_priv = None      # 会话内公钥密码的私钥 (cipher_id, private)
+                expected_seq = 0        # 重放保护：JSON 帧序号严格递增
                 while True:             # 会话内多帧循环，直到一个终结帧
                     packet = recv_frame(conn)
                     if packet.get("session") != session:
                         raise ValueError("会话编号不匹配")
+                    seq = packet.get("seq")
+                    if seq != expected_seq:
+                        raise ValueError(f"重放/乱序检测：期望 seq={expected_seq}，收到 {seq}")
+                    expected_seq += 1
                     t = packet.get("type")
 
                     if t == "encrypted_message":

@@ -11,7 +11,20 @@ const MODES = [
   { id: "pubkey", label: "公钥密码", desc: "RSA/ElGamal/SM2 反向密钥流" },
   { id: "digest", label: "MD5 摘要", desc: "完整性校验" },
   { id: "ecdh", label: "ECDH", desc: "secp256k1 密钥交换" },
+  { id: "file", label: "文件传输", desc: "64KB 分块加密传输文件" },
 ];
+
+function fileToBase64(f: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const s = String(reader.result);
+      resolve(s.slice(s.indexOf(",") + 1)); // 去掉 "data:...;base64," 前缀
+    };
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(f);
+  });
+}
 
 const CIPHERS = [
   ["aes", "AES"],
@@ -51,6 +64,7 @@ export default function DualPage() {
   const [transport, setTransport] = useState("aes");
   const [text, setText] = useState("HELLO WORLD");
   const [key, setKey] = useState("");
+  const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<Result | null>(null);
 
@@ -60,10 +74,19 @@ export default function DualPage() {
     setLoading(true);
     setResult(null);
     try {
+      let payload: Record<string, unknown> = { mode, cipher, transport, text, key: key || undefined };
+      if (mode === "file") {
+        if (!file) {
+          setResult({ ok: false, clientStdout: "", clientStderr: "", serverOutput: "", error: "请先选择要传输的文件" });
+          return;
+        }
+        const content = await fileToBase64(file);
+        payload = { mode: "file", filename: file.name, content, transport };
+      }
       const res = await fetch("/api/dual/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode, cipher, transport, text, key: key || undefined }),
+        body: JSON.stringify(payload),
       });
       const data = (await res.json()) as Result;
       setResult(data);
@@ -88,6 +111,11 @@ export default function DualPage() {
   const clientEcdh = result?.clientStdout?.match(/ECDH_SHARED ([0-9a-f]+)/)?.[1];
   const serverEcdh = result?.serverOutput?.match(/ECDH_SHARED ([0-9a-f]+)/)?.[1];
   const ecdhOk = mode === "ecdh" ? !!(clientEcdh && serverEcdh && clientEcdh === serverEcdh) : undefined;
+
+  const clientFileSize = result?.clientStdout?.match(/FILE_SIZE (\d+)/)?.[1];
+  const serverFileSize = result?.serverOutput?.match(/FILE_SIZE (\d+)/)?.[1];
+  const fileOk = mode === "file" ? !!(clientFileSize && serverFileSize && clientFileSize === serverFileSize) : undefined;
+  const fileSaved = result?.serverOutput?.match(/FILE_SAVED (.*)/)?.[1];
 
   return (
     <div className="space-y-6">
@@ -170,24 +198,43 @@ export default function DualPage() {
                 />
               </>
             )}
-            <label className="field-label mt-4">明文</label>
-            <textarea
-              className="input min-h-[80px] resize-y"
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              placeholder="输入要加密的消息…"
-            />
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              <button className="btn-ghost btn !px-2.5 !py-1 text-xs" onClick={() => setText("HELLO WORLD")}>
-                英文示例
-              </button>
-              <button className="btn-ghost btn !px-2.5 !py-1 text-xs" onClick={() => setText("双机加解密演示：信息安全实训 2026")}>
-                中文示例
-              </button>
-            </div>
-            <p className="hint mt-2">
-              古典密码（Vigenère/Playfair/多表/列置换）只处理 A–Z 字母；AES/DES/RC4/CA 及公钥密码、MD5 支持任意文本（含中文）。
-            </p>
+            {mode === "file" ? (
+              <>
+                <label className="field-label mt-4">选择要传输的文件</label>
+                <input
+                  type="file"
+                  className="input"
+                  onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                />
+                {file && (
+                  <p className="hint mt-2">已选：{file.name}（{file.size} 字节）</p>
+                )}
+                <p className="hint mt-2">
+                  文件经 64KB 分块 + 传输密码加密 + HMAC 校验后发送，Bob 解密后保存到 DH/received/。
+                </p>
+              </>
+            ) : (
+              <>
+                <label className="field-label mt-4">明文</label>
+                <textarea
+                  className="input min-h-[80px] resize-y"
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  placeholder="输入要加密的消息…"
+                />
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  <button className="btn-ghost btn !px-2.5 !py-1 text-xs" onClick={() => setText("HELLO WORLD")}>
+                    英文示例
+                  </button>
+                  <button className="btn-ghost btn !px-2.5 !py-1 text-xs" onClick={() => setText("双机加解密演示：信息安全实训 2026")}>
+                    中文示例
+                  </button>
+                </div>
+                <p className="hint mt-2">
+                  古典密码（Vigenère/Playfair/多表/列置换）只处理 A–Z 字母；AES/DES/RC4/CA 及公钥密码、MD5 支持任意文本（含中文）。
+                </p>
+              </>
+            )}
           </div>
         </div>
 
@@ -232,6 +279,12 @@ export default function DualPage() {
                 {ecdhOk ? "✓ ECDH 共享点一致" : "✗ ECDH 共享点不一致"}
               </span>
             )}
+            {fileOk !== undefined && (
+              <span className={`chip ${fileOk ? "" : "chip-red"}`}>
+                {fileOk ? "✓ 文件大小一致" : "✗ 文件大小不一致"}
+              </span>
+            )}
+            {fileSaved && <span className="chip">📁 {fileSaved}</span>}
           </div>
         </div>
       )}

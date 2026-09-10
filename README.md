@@ -34,6 +34,9 @@ Internship2/
 │   ├── ECC/                         椭圆曲线（secp256k1，仅 ECDH，无消息加密）
 │   ├── Elgamal/                     ElGamal（安全素数 + k 重用攻击演示）
 │   └── SM2/                         国密 SM2（手写 SM3 + SM2-PKE + 签名）
+│        ├── sm2.c / sm3.c / bn.c     同算法的 C 独立实现（256-bit 大整数库）
+│        ├── sm2_cli.c                C 版命令行接口（keygen/enc/dec）
+│        └── interop.py               Python↔C 跨语言互操作 + 基准
 ├── MD5/                             单向散列 MD5（RFC 1321）
 ├── DH/                              双机加解密框架（重点）
 │   ├── main.py                      单机 DH 演示（不涉及 socket）
@@ -41,9 +44,12 @@ Internship2/
 │   ├── cipher_registry.py           适配层：统一加载所有密码 + 归一接口 + 分派
 │   ├── encrypt_client.py            加密端 CLI
 │   ├── decrypt_server.py            解密端 CLI
-│   └── test_integration.py          端到端验收（消息/文件/对称/公钥/摘要/ECDH）
+│   ├── mitm.py                      中间人攻击演示（认证 DH 攻防对照）
+│   ├── test_integration.py          端到端验收（消息/文件/对称/公钥/摘要/ECDH）
+│   └── test_security.py             安全信道测试（认证 DH + MITM + 重放保护）
 ├── web/                             Next.js 单机统一界面（队友负责，TypeScript）
 ├── verify.py                        交叉验证脚本（MD5/RC4/CA 对比标准库）
+├── test_vectors.py                  标准测试向量（NIST AES/DES + GM/T SM3）
 ├── main.py                          根目录 PyCharm 模板，未使用，忽略
 ├── view/main.py                     空文件，未使用，忽略
 └── start.bat                        Windows 启动 web 的脚本
@@ -56,6 +62,8 @@ Internship2/
 1. 通信层（`DH/dh_socket_common.py`）
    - 帧协议：JSON 帧（`send_frame`/`recv_frame`）与二进制帧（`send_bytes`/`recv_bytes`），长度前缀 `!I`。
    - DH 密钥交换（小素数 7919/5，固定私钥 1234/5678，教学用），用 KDF 派生「传输密码所需长度的密钥」+ HMAC 密钥。
+   - 认证 DH（防中间人）：Bob 用长期 SM2 身份密钥对 DH 交换 transcript 做签名，Alice 持 Bob 公钥验签；验签失败即说明公开值被中间人替换。原始 DH 无法防 MITM，攻防对照见 `mitm.py`。
+   - 重放保护：握手后每个 JSON 帧带递增 `seq` 序号，解密端校验严格递增，重复/乱序帧被拒。
    - 传输密码可动态指定（默认 `aes`，可选 `des`/`rc4`/`ca`）：整个信封用「DH 派生的密钥 + 所选传输密码 + HMAC」
      加密后再传，网络上传的永远是密文。因为密钥由 DH 协商，任意所选传输密码都满足「至少一个密码用 DH 交换密钥」。
    - 文件传输：64KB 分块，每块传输密码加密 + HMAC（sha256 标签 64 字节 hex 拼在密文尾部），末尾空帧做 EOF。
@@ -141,6 +149,7 @@ python3 encrypt_client.py --pubkey rsa --text ...  # 公钥密码（rsa/elgamal/
 python3 encrypt_client.py --digest --text ...      # MD5 完整性校验
 python3 encrypt_client.py --ecdh                   # ECC-ECDH 密钥交换
 # 通用：--host --port --transport（默认 127.0.0.1:29090；传输密码 aes/des/rc4/ca，默认 aes）
+# 认证 DH：--bob-pubkey（Bob 身份公钥，默认内置）/ --no-auth（关闭验签，教学观察 MITM）
 ```
 
 解密端：`python3 decrypt_server.py [--host --port]`（每次连接处理完一个会话后退出，once=True）。
@@ -182,8 +191,17 @@ python3 publicKey/RSA/main.py --selftest
 # 交叉验证（MD5/RC4/CA 对比标准库）
 python3 verify.py
 
+# 标准测试向量（NIST AES/DES + GM/T SM3，证明与标准一致）
+python3 test_vectors.py
+
 # 双机端到端验收（覆盖所有帧类型，全部 PASS 才通过）
 cd DH && python3 test_integration.py
+
+# 安全信道测试（认证 DH / MITM 攻防 / 重放保护）
+cd DH && python3 test_security.py
+
+# C 跨语言互操作 + 基准（先编译 C 版 SM2）
+cd publicKey/SM2 && cc -O2 -o sm2_cli sm2_cli.c sm2.c sm3.c bn.c && python3 interop.py --selftest
 
 # web 前端（队友负责）
 cd web && npm install && npm run dev   # http://localhost:3900
@@ -227,7 +245,7 @@ py desktop/run_desktop.py
 - `双机信道`：启动现有 `DH/decrypt_server.py` 与 `DH/encrypt_client.py`，执行消息或文件传输，显示 Alice、Bob、DH、传输密码、HMAC 和解密状态。
 - `攻击实验`：调用 `publicKey/Elgamal/main.py --demo`，观察随机数 `k` 复用导致 `r` 相同并恢复私钥的教学实验。
 - `验证中心`：在后台线程执行 `verify.py` 和 `DH/test_integration.py`，避免测试过程冻结界面。
-- `智能助手`：在设置中填写 OpenAI 兼容 API 地址、模型和 API Key；助手读取 README、TODO、Git 状态以及当前问题，返回中文 Markdown 格式的解释、诊断或实验结论。
+- `智能助手`：系统内密码学应用编排器（agent）。在设置中填写 API 地址、模型和 API Key 后，助手调用 10 个密码原语（对称/公钥/SM2 签名验签/散列/HMAC），把它们编排成高层应用流程（混合加密、数字签名、加密保险箱），并在对话区实时展示编排步骤。工具层封装为 `agent_cli.py`（CLI + 统一 JSON 输出），循环用 ReAct。
 
 ### 10.3 智能助手配置
 
@@ -255,7 +273,8 @@ API Key 使用密码框显示，并保存到本机 `QSettings`，不会写入本
 - 助手回答中的标题、列表、加粗、代码块和基础表格 Markdown 渲染；
 - 复制最新回答；
 - 清空当前会话；
-- `解释当前实验`、`诊断项目状态`、`生成实验结论`快捷操作。
+- 三个场景按钮：`混合加密`、`数字签名`、`加密保险箱`；
+- 实时展示编排过程（思考 + 每个工具调用 + 返回结果）。
 
 ### 10.4 双机消息演示
 
@@ -338,7 +357,7 @@ API Key 使用密码框显示，并保存到本机 `QSettings`，不会写入本
 
 如果展示智能助手，可以这样说：
 
-> 智能助手不是密码算法的替代实现。它读取项目说明、待办和 Git 状态，把当前实验资料整理后发送给用户配置的模型，用于解释算法、诊断测试和生成实验结论。API 配置独立保存，回答使用 Markdown 渲染，原有算法仍由项目代码执行。
+> 智能助手不是密码算法的替代实现，而是系统内的密码学应用编排器。它调用项目自己的密码原语（封装成 CLI），把基础算法编排成混合加密、数字签名、加密保险箱等高层应用。模型只负责规划步骤和调度工具，真正的加密计算仍由项目代码执行；口令派生密钥用加盐的 PBKDF2，而不是简单散列。
 
 ### 11.7 结束总结
 

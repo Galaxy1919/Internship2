@@ -10,7 +10,7 @@ import json
 import struct
 from pathlib import Path
 
-from cipher_registry import get as get_cipher
+from cipher_registry import get as get_cipher, SM2 as SM2_MODULE
 
 P = 7919
 G = 5
@@ -101,9 +101,47 @@ def decrypt_message(packet, key, mac_key, cipher_id="aes"):
     return cipher["decrypt"](ct, key).decode("utf-8")
 
 
+def _transcript_bytes(alice_public, bob_public):
+    return f"{P}|{G}|{alice_public}|{bob_public}".encode()
+
+
 def transcript_hash(alice_public, bob_public):
-    text = f"{P}|{G}|{alice_public}|{bob_public}".encode()
+    text = _transcript_bytes(alice_public, bob_public)
     return hashlib.sha256(text).hexdigest()[:16]
+
+
+# ---------------------------------------------------------------------------
+# 认证 DH（防中间人）：Bob 用长期 SM2 身份密钥对 DH 交换 transcript 做签名，
+# Alice 持 Bob 公钥验签。原始 DH 不认证身份，中间人可替换双方公开值；加了
+# 签名后，中间人无法伪造 Bob 的签名，篡改公开值会立即被 Alice 识破。
+# ---------------------------------------------------------------------------
+
+# Bob 的长期身份密钥对（教学用固定值，由固定种子确定性派生，保证可复现）
+_BOB_IDENTITY_SEED = b"bob-long-term-identity-key"
+BOB_IDENTITY_D = (int.from_bytes(SM2_MODULE.sm3(_BOB_IDENTITY_SEED), "big")
+                  % (SM2_MODULE.SM2.n - 1) + 1)
+BOB_IDENTITY_PUB = SM2_MODULE.scalar_mul(BOB_IDENTITY_D, SM2_MODULE.SM2.G)
+BOB_IDENTITY_PUB_STR = f"{BOB_IDENTITY_PUB[0]}:{BOB_IDENTITY_PUB[1]}"
+
+
+def sign_transcript(priv_d, pub, alice_public, bob_public):
+    """Bob 对 DH 交换 transcript 做 SM2 签名，返回 "r:s" 字符串。"""
+    msg = _transcript_bytes(alice_public, bob_public)
+    r, s = SM2_MODULE.sign(msg, priv_d, pub)
+    return f"{r}:{s}"
+
+
+def verify_transcript(sig_str, pub, alice_public, bob_public):
+    """Alice 用 Bob 公钥验签，确认 DH 公开值确实来自 Bob（而非中间人）。"""
+    msg = _transcript_bytes(alice_public, bob_public)
+    r, s = (int(v) for v in sig_str.split(":"))
+    return SM2_MODULE.verify(msg, (r, s), pub)
+
+
+def parse_pubkey(pub_str):
+    """把 "x:y" 十进制字符串还原成 (x, y) int 元组。"""
+    x, y = (int(v) for v in pub_str.split(":"))
+    return x, y
 
 
 # ---------------------------------------------------------------------------

@@ -16,12 +16,15 @@ TOOLS: list[dict] = [
         "type": "function",
         "function": {
             "name": "make_key",
-            "description": "生成对称密码的密钥。返回 JSON：{cipher, key}。key 是 hex 字符串（古典密码则为关键词字符串）。seed 缺省时随机生成。",
+            "description": "生成对称密码的密钥。返回 JSON：{cipher, key}。key 是 hex 字符串（古典密码则为关键词字符串）。seed 缺省时随机生成。用口令派生密钥（加密保险箱/口令加密场景）时应传 kdf=pbkdf2，返回会额外带 {salt, iterations}。",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "cipher": {"type": "string", "enum": SYM_CIPHERS, "description": "对称密码名"},
-                    "seed": {"type": "string", "description": "可选：由该种子派生密钥（如口令）。缺省随机。"},
+                    "seed": {"type": "string", "description": "可选：由该种子派生密钥（如口令）。缺省随机；pbkdf2 下作为口令必填。"},
+                    "kdf": {"type": "string", "enum": ["sha256", "pbkdf2"], "description": "口令派生方式。用口令派生密钥时用 pbkdf2（加盐 PBKDF2-HMAC-SHA256，防彩虹表）；默认 sha256。"},
+                    "iterations": {"type": "integer", "description": "PBKDF2 迭代次数，默认 100000，可省略。"},
+                    "salt": {"type": "string", "description": "PBKDF2 的盐（hex）。解密复现密钥时传入加密时返回的 salt；缺省随机生成。"},
                 },
                 "required": ["cipher"],
             },

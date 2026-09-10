@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { spawn, type ChildProcess } from "child_process";
 import { existsSync } from "fs";
+import { writeFile, mkdir, rm } from "fs/promises";
+import os from "os";
 import path from "path";
 import net from "net";
 
@@ -107,6 +109,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: `非法传输密码: ${transport}` }, { status: 400 });
   }
 
+  let tmpFile: string | undefined;
+
   const clientArgs = ["DH/encrypt_client.py"];
   if (mode === "message") {
     clientArgs.push(text);
@@ -125,6 +129,23 @@ export async function POST(req: Request) {
     clientArgs.push("--digest", "--text", text);
   } else if (mode === "ecdh") {
     clientArgs.push("--ecdh");
+  } else if (mode === "file") {
+    const filename = typeof body.filename === "string" && body.filename.length > 0
+      ? body.filename : "upload.bin";
+    const contentB64 = typeof body.content === "string" ? body.content : "";
+    if (!contentB64) {
+      return NextResponse.json({ ok: false, error: "文件内容为空" }, { status: 400 });
+    }
+    const safeName = path.basename(filename); // 防路径穿越
+    const tmpDir = path.join(os.tmpdir(), "dual_transfer");
+    try {
+      await mkdir(tmpDir, { recursive: true });
+      tmpFile = path.join(tmpDir, safeName);
+      await writeFile(tmpFile, Buffer.from(contentB64, "base64"));
+    } catch (e) {
+      return NextResponse.json({ ok: false, error: `写临时文件失败: ${e}` }, { status: 500 });
+    }
+    clientArgs.push("--file", tmpFile);
   } else {
     return NextResponse.json({ ok: false, error: `未知模式: ${mode}` }, { status: 400 });
   }
@@ -149,6 +170,13 @@ export async function POST(req: Request) {
     await waitForServerReady(() => serverOutput);
     const client = await run(clientArgs);
     await waitForExit(server);
+    if (tmpFile) {
+      try {
+        await rm(tmpFile, { force: true });
+      } catch {
+        /* 忽略临时文件清理失败 */
+      }
+    }
     return NextResponse.json({
       ok: client.code === 0,
       clientStdout: client.stdout,
