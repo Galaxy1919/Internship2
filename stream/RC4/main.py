@@ -64,7 +64,7 @@ def prga(S: list, n: int) -> bytes:
     for _ in range(n):
         i = (i + 1) & 0xFF
         j = (j + S[i]) & 0xFF
-        S[i], S[j] = S[j], S[i]
+        S[i], S[j] = S[j], S[i]# 交换使得S盒在prga过程中仍然会变化，增加随机性，否则生成的密钥流周期最大为256
         keystream.append(S[(S[i] + S[j]) & 0xFF]) # 将S[ S[i]+S[j] mod 256 ]的值作为轮密钥
     return bytes(keystream)
 

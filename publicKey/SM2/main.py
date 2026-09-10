@@ -94,12 +94,12 @@ def sm3(message: bytes) -> bytes:
     msg += struct.pack(">Q", bit_len)
 
     V = list(_IV)
-    for off in range(0, len(msg), 64):
-        W = list(struct.unpack(">16I", msg[off:off + 64]))
-        for i in range(16, 68):
+    for off in range(0, len(msg), 64):# 每64字节为一块，拆分原文msg
+        W = list(struct.unpack(">16I", msg[off:off + 64])) #每个64字节的块拆成16个32进制的大端字W[0...15]
+        for i in range(16, 68):# 64字节扩展为68字节
             W.append(_P1(W[i - 16] ^ W[i - 9] ^ _rotl(W[i - 3], 15))
                      ^ _rotl(W[i - 13], 7) ^ W[i - 6])
-        W_ = [(W[i] ^ W[i + 4]) & 0xFFFFFFFF for i in range(64)]
+        W_ = [(W[i] ^ W[i + 4]) & 0xFFFFFFFF for i in range(64)]# W_[i]=W[i]⊕W[i+4]，W_共64个元素
 
         A, B, C, D, E, F, G, H = V
         for j in range(64):
@@ -126,7 +126,7 @@ def sm3(message: bytes) -> bytes:
 # 二、SM2 曲线参数(GM/T 0003.5-2012 推荐参数)
 # ---------------------------------------------------------------------------
 
-Point = Optional[Tuple[int, int]]
+Point = Optional[Tuple[int, int]]# Point=(x,y) or None(无穷远点)
 
 
 @dataclass(frozen=True)
@@ -150,14 +150,14 @@ SM2 = SM2Curve(
     Gx=0x32C4AE2C1F1981195F9904466A39C9948FE30BBFF2660BE1715A4589334C74C7,
     Gy=0xBC3736A2F4F6779C59BDCEE36B692153D0A9877CC62A474002DF32E52139F0A0,
     n=0xFFFFFFFEFFFFFFFFFFFFFFFFFFFFFFFF7203DF6B21C6052B53BBF40939D54123,
-)
+)# GM/T 0003.5标准参数
 
 
 # ---------------------------------------------------------------------------
 # 三、椭圆曲线群运算(与 publicKey/ECC 模块保持一致的教学接口)
 # ---------------------------------------------------------------------------
 
-def _modinv(x: int, p: int) -> int:
+def _modinv(x: int, p: int) -> int:# 模逆运算
     return pow(x, -1, p)
 
 
@@ -202,15 +202,15 @@ def scalar_mul(k: int, P: Point, C: SM2Curve = SM2) -> Point:
     return result
 
 
-def public_key_is_valid(pub: Point, C: SM2Curve = SM2) -> bool:
-    if pub is None:
+def public_key_is_valid(pub: Point, C: SM2Curve = SM2) -> bool:# 公钥合法性检查
+    if pub is None:# 无穷远点不合法
         return False
     x, y = pub
-    if not (0 <= x < C.p and 0 <= y < C.p):
+    if not (0 <= x < C.p and 0 <= y < C.p):# 由于x,y是mod p下的，所以x、y必须<=p
         return False
-    if not is_on_curve(pub, C):
+    if not is_on_curve(pub, C):# 不在曲线上不合法
         return False
-    return scalar_mul(C.n, pub, C) is None
+    return scalar_mul(C.n, pub, C) is None # n*Q!=O不合法，n作为G的阶，有n*G=O,Q=d*G,所以n*Q=n*G*d=O*d应当=O
 
 
 # ---------------------------------------------------------------------------
@@ -218,8 +218,8 @@ def public_key_is_valid(pub: Point, C: SM2Curve = SM2) -> bool:
 # ---------------------------------------------------------------------------
 
 def generate_keypair(C: SM2Curve = SM2) -> Tuple[int, Point]:
-    d = 1 + secrets.randbelow(C.n - 1)
-    return d, scalar_mul(d, C.G, C)
+    d = 1 + secrets.randbelow(C.n - 1)# 生成密钥，d∈[1,n-1]
+    return d, scalar_mul(d, C.G, C) # 公钥Q=scalar_mul(d, C.G, C)=d*G
 
 
 def _int_to_bytes(x: int, n: int) -> bytes:
@@ -230,7 +230,7 @@ def compute_ZA(user_id: bytes, pub: Point, C: SM2Curve = SM2) -> bytes:
     """SM2-DSA 的 ZA 预处理:把用户 ID、曲线参数、公钥一起哈希,后续再和消息拼接。
 
     ZA = SM3( ENTL_A || ID_A || a || b || xG || yG || xA || yA )
-      ENTL_A: ID_A 的比特长度(2 字节大端)
+      ENTL_A: ID_A 的比特长度(2 字节大端),其余为32字节大端
     """
     if pub is None:
         raise ValueError("公钥不能是无穷远")

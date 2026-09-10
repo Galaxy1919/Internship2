@@ -23,6 +23,9 @@ md5_mod = load("md5_mod", os.path.join("MD5", "main.py"))
 rc4_mod = load("rc4_mod", os.path.join("stream", "RC4", "main.py"))
 ca_mod  = load("ca_mod",  os.path.join("stream", "CA",  "main.py"))
 
+# 每节自检结果汇总，供退出码使用（桌面端「验证中心」据此判断整体是否通过）
+section_results = []
+
 
 # --------------------------------------------------------------------
 # 1. MD5 vs hashlib(权威对比,覆盖各种长度和边界)
@@ -51,6 +54,7 @@ for name, data in cases:
     tag = "OK  " if ok else "FAIL"
     print(f"  [{tag}] {name:20s}  mine={mine}  hashlib={ref}")
 print(f"MD5 交叉验证: {'全部通过 ✓' if all_ok else '存在差异 ✗'}")
+section_results.append(all_ok)
 
 
 # --------------------------------------------------------------------
@@ -71,6 +75,7 @@ for size in [0, 1, 15, 16, 17, 100, 1024, 8192]:
     all_ok = all_ok and ok
     print(f"  [{'OK  ' if ok else 'FAIL'}] {size:>5} 字节  密文前16={cipher[:16].hex():<32}  往返={'一致' if ok else '不一致'}")
 print(f"RC4 往返: {'全部通过 ✓' if all_ok else '存在失败 ✗'}")
+section_results.append(all_ok)
 
 
 # --------------------------------------------------------------------
@@ -91,6 +96,7 @@ for rule in [30, 90, 110, 45, 150]:
     all_ok = all_ok and ok
     print(f"  [{'OK  ' if ok else 'FAIL'}] rule={rule:>3}  密文前16={cipher[:16].hex():<32}  往返={'一致' if ok else '不一致'}")
 print(f"CA 往返: {'全部通过 ✓' if all_ok else '存在失败 ✗'}")
+section_results.append(all_ok)
 
 
 # --------------------------------------------------------------------
@@ -121,4 +127,7 @@ c2 = ca_mod.ca_crypt(b"\x00" * 64, k2)
 print(f"  CA  换密钥后密钥流比特翻转率 = {bit_diff_ratio(c1, c2):.1%}")
 
 print()
-print("完成。")
+passed = all(section_results)
+print(f"交叉验证汇总: {'全部通过' if passed else '存在失败'} "
+      f"({sum(section_results)}/{len(section_results)} 节通过)")
+sys.exit(0 if passed else 1)

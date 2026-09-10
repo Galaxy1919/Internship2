@@ -14,6 +14,9 @@
 本层负责拆包。C 侧 enc 输出 "<4位hex明文长>:<密文>"，密文自携带长度前缀，
 decrypt 时据此截掉 'X' 填充，因此密文字节本身就是可逆的完整载体。
 明文长度 ≤ 4096，两个密钥列数必须相同。
+
+与 Python 版（main.py，变长列布局、无填充）的关系见 interop.py：明文长度为
+密钥列数整数倍时两者密文逐字节相同，其余长度因填充约定不同需经格式适配。
 """
 import subprocess
 import sys
@@ -34,7 +37,8 @@ def _run(args):
     except subprocess.CalledProcessError as e:
         err = e.stderr.decode("utf-8", errors="replace").strip()
         raise RuntimeError(f"dt 调用失败: {err}") from None
-    return r.stdout.decode("utf-8").rstrip("\n")
+    # 只去掉行尾换行：Windows 上 C 的 printf 输出行尾是 CR+LF，留下的 CR 会混进密文。
+    return r.stdout.decode("utf-8").rstrip("\r\n")
 
 
 def _split_key(key: bytes):

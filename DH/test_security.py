@@ -45,6 +45,7 @@ def _drain(proc):
 
 def test_auth_wrong_pubkey():
     bob = _start("decrypt_server.py", "--port", "29091")
+    ok = False
     try:
         _wait_ready(bob, "READY")
         r = subprocess.run([PY, "encrypt_client.py", "消息", "--port", "29091",
@@ -52,14 +53,17 @@ def test_auth_wrong_pubkey():
                            capture_output=True, text=True, timeout=30)
         if "检测到中间人" in (r.stdout + r.stderr):
             print("[PASS] auth 错误公钥被拒（= 中间人冒充 Bob 被识破）")
+            ok = True
         else:
             print(f"[FAIL] auth 预期拒绝，实际 out={r.stdout!r} err={r.stderr!r}")
     finally:
         bob.kill()
+    return ok
 
 
 def test_mitm_noauth():
     bob = _start("decrypt_server.py", "--port", "29092")
+    ok = False
     try:
         _wait_ready(bob, "READY")
         mitm = _start("mitm.py", "--mitm-port", "39002", "--target-port", "29092")
@@ -71,16 +75,19 @@ def test_mitm_noauth():
             mitm_out = _drain(mitm)
             if "绝密消息XYZ" in mitm_out:
                 print("[PASS] MITM 无认证：中间人解密得到明文（攻击得逞）")
+                ok = True
             else:
                 print(f"[FAIL] MITM 无认证：中间人未解密成功，out={mitm_out!r}")
         finally:
             mitm.kill()
     finally:
         bob.kill()
+    return ok
 
 
 def test_mitm_auth():
     bob = _start("decrypt_server.py", "--port", "29093")
+    ok = False
     try:
         _wait_ready(bob, "READY")
         mitm = _start("mitm.py", "--mitm-port", "39003", "--target-port", "29093")
@@ -92,12 +99,14 @@ def test_mitm_auth():
             mitm_out = _drain(mitm)
             if "检测到中间人" in combined and "被识破" in mitm_out:
                 print("[PASS] MITM 认证：Alice 检测到攻击并断开，中间人被识破")
+                ok = True
             else:
                 print(f"[FAIL] MITM 认证：alice={combined!r} mitm={mitm_out!r}")
         finally:
             mitm.kill()
     finally:
         bob.kill()
+    return ok
 
 
 def test_replay():
@@ -106,6 +115,7 @@ def test_replay():
         send_frame, recv_frame, encrypt_message, transcript_hash,
     )
     bob = _start("decrypt_server.py", "--port", "29094")
+    ok = False
     try:
         _wait_ready(bob, "READY")
         s = socket.create_connection(("127.0.0.1", 29094), timeout=10)
@@ -125,14 +135,24 @@ def test_replay():
         out = _drain(bob)
         if "重放" in out or "seq" in out:
             print("[PASS] 重放保护：错误 seq 被服务端拒绝")
+            ok = True
         else:
             print(f"[FAIL] 重放保护：服务端未拒绝，out={out!r}")
     finally:
         bob.kill()
+    return ok
 
 
 if __name__ == "__main__":
-    test_auth_wrong_pubkey()
-    test_mitm_noauth()
-    test_mitm_auth()
-    test_replay()
+    tests = [test_auth_wrong_pubkey, test_mitm_noauth, test_mitm_auth, test_replay]
+    results = []
+    for test in tests:
+        try:
+            results.append(bool(test()))
+        except Exception as exc:                      # 等待超时/端口占用等
+            print(f"[FAIL] {test.__name__} 异常: {exc!r}")
+            results.append(False)
+    passed = all(results)
+    print(f"\n安全信道测试: {'全部通过' if passed else '存在失败'} "
+          f"({sum(results)}/{len(results)})")
+    sys.exit(0 if passed else 1)

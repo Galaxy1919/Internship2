@@ -15,6 +15,7 @@
 - C 侧约定：仅对 A-Z 字母加解密，非字母原样保留且不消耗密钥流；密钥须为大写
   字母串（本层自动转大写）。明文/密文长度一致，无填充。
 - 密文为 UTF-8 文本字节；明文里的非 A-Z 字符（空格/标点/中文）会原样出现在密文中。
+- 与 Python 版（main.py 的 autokey-plaintext 变体）等价的范围：仅含大写字母的输入。
 """
 import subprocess
 import sys
@@ -34,7 +35,9 @@ def _run(args):
     except subprocess.CalledProcessError as e:
         err = e.stderr.decode("utf-8", errors="replace").strip()
         raise RuntimeError(f"autokey 调用失败: {err}") from None
-    return r.stdout.decode("utf-8").rstrip("\n")
+    # 只去掉行尾换行：Windows 上 C 的 printf 输出行尾是 CR+LF，若只去 LF 会留下 CR，
+    # 而 CR 属于「非字母」，会被 C 原样写进解密结果，导致往返不一致。
+    return r.stdout.decode("utf-8").rstrip("\r\n")
 
 
 def encrypt(payload: bytes, key: bytes) -> bytes:

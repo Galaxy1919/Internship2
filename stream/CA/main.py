@@ -71,12 +71,12 @@ def key_to_seed_cells(key: bytes, cells: int = DEFAULT_CELLS) -> list:
     比特的原因:短密钥循环填充会产生强相关的初始模式(比如密钥
     只有 8 字节时,64 个细胞全是同一段比特的重复)。
     """
-    seed = hashlib.sha256(key).digest()
+    seed = hashlib.sha256(key).digest()# 字节串，sha256的32个字节相当于seed是32位的数组
     bits = []
     for b in seed:
-        for shift in range(7, -1, -1):
+        for shift in range(7, -1, -1):# 每个字节从高位到低位取
             bits.append((b >> shift) & 1)
-    return [bits[i % len(bits)] for i in range(cells)]
+    return [bits[i % len(bits)] for i in range(cells)]# bits共256位，而i只能到cell的64位，剩下的都丢弃了
 
 
 def ca_step(cells: list, table: list) -> list:
@@ -91,7 +91,7 @@ def ca_step(cells: list, table: list) -> list:
         left = cells[(i - 1) % n]
         center = cells[i]
         right = cells[(i + 1) % n]
-        idx = (left << 2) | (center << 1) | right   # 邻居组合 -> 0..7
+        idx = (left << 2) | (center << 1) | right   # 即left center right拼接为三位二进制，对应邻居组合 -> 0..7
         new[i] = table[idx]
     return new
 
@@ -105,6 +105,7 @@ def ca_keystream(key: bytes,
 
     流程:密钥 -> 初始细胞 -> 预热 -> 循环演化并拼字节 -> 截断到所需长度。
     """
+    # 先演化一轮，遍历当前 64 个细胞，把每个 bit 左移拼进 byte_val；每拼满 8 个 bit，就追加一个字节到 keystream。
     table = build_rule_table(rule)
     state = key_to_seed_cells(key, cells)
 
@@ -125,6 +126,7 @@ def ca_keystream(key: bytes,
 
 def ca_crypt(data: bytes, key: bytes, rule: int = DEFAULT_RULE) -> bytes:
     """加密与解密是同一个操作:数据与密钥流逐字节异或。"""
+    # 明文⊕密钥流=密文，密文⊕密钥流=明文
     keystream = ca_keystream(key, len(data), rule=rule)
     return bytes(a ^ b for a, b in zip(data, keystream))
 
