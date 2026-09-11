@@ -1,48 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-SM2 国密椭圆曲线密码从零实现
-==============================
-
-原理
-----
-SM2 是中国国家密码管理局发布的椭圆曲线公钥密码算法(GM/T 0003-2012),
-使用固定的 256-bit 素数域曲线,提供三个组件:
-
-  1) 密钥交换协议(SM2-KE)  -- 本文件未实现,课堂暂略
-  2) 数字签名算法 (SM2-DSA) -- 本文件重点实现
-  3) 公钥加密算法 (SM2-PKE) -- 本文件重点实现
-
-曲线方程和 ECC 一样是短 Weierstrass 形式:
-    y^2 = x^3 + a·x + b  (mod p)
-但参数是国家标准指定的固定值(见 GM/T 0003.5),与 secp256k1 / P-256
-都不同。基点 G 的阶 n 为大素数。
-
-SM2 与国际主流(ECDSA、ECIES)的关键区别:
-  - 摘要函数用 SM3(而非 SHA-256)
-  - 签名时把用户标识 ID 与公钥一起并入 ZA 预处理值,再和消息一起哈希,
-    起到"绑定身份"的作用,防跨用户重放
-  - 加密算法(SM2-PKE)基于 KDF 派生密钥再异或,同时附加 C3 = SM3(x2||M||y2)
-    做完整性校验,输出布局为 C1 || C3 || C2(GM/T 0003.4-2012)
+SM2
 
 创新点
-------
-1. **从零实现 SM3**:课堂常见做法是调用 gmssl 等外部库,本文件手写 SM3,
-   直接对齐 GM/T 0004-2012 的官方测试向量 "abc" 与 512-bit 长消息。
-2. **教学化的 ZA 预处理**:显式打印 ZA 的组成部分,让学生看到 SM2 如何
-   把"用户身份"注入签名。
-3. **合法性检查**:仿照 ECC 教学模块,给出公钥四项校验(在曲线上、非
-   无穷远、坐标在 [0, p)、n·PubKey = O),防小子群/无效曲线攻击。
+仿照 ECC 教学模块,给出公钥四项校验(在曲线上、非无穷远、坐标在 [0, p)、n·PubKey = O),防小子群/无效曲线攻击。
 
-注意
-----
-本实现只做 SM2 的数学核心,未做 ASN.1/DER 编码,也没有实现密钥交换。
-仅用于课程演示,请勿在生产场景使用。
-
-运行方式
---------
-    python main.py --selftest
-    python main.py --demo
+运行
+python main.py --selftest
+python main.py --demo
 """
 from __future__ import annotations
 
@@ -53,9 +19,7 @@ import struct
 from dataclasses import dataclass
 from typing import Optional, Tuple, List
 
-# ---------------------------------------------------------------------------
-# 一、SM3 摘要函数(手写实现,对齐 GM/T 0004-2012)
-# ---------------------------------------------------------------------------
+# 一、SM3 摘要函数(GM/T 0004-2012)
 
 _IV = (0x7380166F, 0x4914B2B9, 0x172442D7, 0xDA8A0600,
        0xA96F30BC, 0x163138AA, 0xE38DEE4D, 0xB0FB0E4E)
@@ -121,9 +85,9 @@ def sm3(message: bytes) -> bytes:
     return struct.pack(">8I", *V)
 
 
-# ---------------------------------------------------------------------------
+
 # 二、SM2 曲线参数(GM/T 0003.5-2012 推荐参数)
-# ---------------------------------------------------------------------------
+
 
 # 密文C=C1||C3||C2
 # C1=k*G,k∈[1,n-1]随机数
@@ -160,9 +124,9 @@ SM2 = SM2Curve(
 )# GM/T 0003.5标准参数
 
 
-# ---------------------------------------------------------------------------
+
 # 三、椭圆曲线群运算(与 publicKey/ECC 模块保持一致的教学接口)
-# ---------------------------------------------------------------------------
+
 
 def _modinv(x: int, p: int) -> int:# 模逆运算
     return pow(x, -1, p)
@@ -219,10 +183,7 @@ def public_key_is_valid(pub: Point, C: SM2Curve = SM2) -> bool:# 公钥合法性
         return False
     return scalar_mul(C.n, pub, C) is None # n*Q!=O不合法，n作为G的阶，有n*G=O,Q=d*G,所以n*Q=n*G*d=O*d应当=O
 
-
-# ---------------------------------------------------------------------------
 # 四、密钥对与 ZA 预处理
-# ---------------------------------------------------------------------------
 
 def generate_keypair(C: SM2Curve = SM2) -> Tuple[int, Point]:
     d = 1 + secrets.randbelow(C.n - 1)# 生成密钥，d∈[1,n-1]
@@ -231,7 +192,6 @@ def generate_keypair(C: SM2Curve = SM2) -> Tuple[int, Point]:
 
 def _int_to_bytes(x: int, n: int) -> bytes:
     return x.to_bytes(n, "big")
-
 
 def compute_ZA(user_id: bytes, pub: Point, C: SM2Curve = SM2) -> bytes:
     """SM2-DSA 的 ZA 预处理:把用户 ID、曲线参数、公钥一起哈希,后续再和消息拼接。
@@ -253,10 +213,7 @@ def compute_ZA(user_id: bytes, pub: Point, C: SM2Curve = SM2) -> bytes:
     )
     return sm3(body)
 
-
-# ---------------------------------------------------------------------------
 # 五、SM2 数字签名
-# ---------------------------------------------------------------------------
 
 DEFAULT_ID = b"1234567812345678"  # GM/T 0003.5 默认标识
 
@@ -264,7 +221,7 @@ DEFAULT_ID = b"1234567812345678"  # GM/T 0003.5 默认标识
 def sign(msg: bytes, d: int, pub: Point, user_id: bytes = DEFAULT_ID,
          C: SM2Curve = SM2, k: int | None = None) -> Tuple[int, int]:
     """SM2 签名 (r, s)。k 可选,便于向量对齐/攻击演示。"""
-    ZA = compute_ZA(user_id, pub, C)
+    ZA = compute_ZA(user_id, pub, C)# ZA = SM3( ENTL_A || ID_A || a || b || xG || yG || xA || yA )
     e = int.from_bytes(sm3(ZA + msg), "big") # e=SM3(ZA||M)
     while True:
         k_try = k if k is not None else (1 + secrets.randbelow(C.n - 1))# 随机选取k
@@ -274,12 +231,12 @@ def sign(msg: bytes, d: int, pub: Point, user_id: bytes = DEFAULT_ID,
                 raise ValueError("指定的 k 生成无穷远点")
             continue
         x1, _ = P1
-        r = (e + x1) % C.n
+        r = (e + x1) % C.n # r=(e+x1)%n
         if r == 0 or (r + k_try) % C.n == 0:
             if k is not None:
                 raise ValueError("指定的 k 无效(r=0 或 r+k=n)")
             continue
-        s = (_modinv(1 + d, C.n) * (k_try - r * d)) % C.n
+        s = (_modinv(1 + d, C.n) * (k_try - r * d)) % C.n # s=(1+d)^(-1)*(k-r*d) mod n=>k=s+t*d mod n
         if s == 0:
             if k is not None:
                 raise ValueError("指定的 k 导致 s=0")
@@ -289,25 +246,27 @@ def sign(msg: bytes, d: int, pub: Point, user_id: bytes = DEFAULT_ID,
 
 def verify(msg: bytes, sig: Tuple[int, int], pub: Point,
            user_id: bytes = DEFAULT_ID, C: SM2Curve = SM2) -> bool:
+    # 验签者知道p,a,b,G,n,PA,IDA,M,r,s,并可由此算出t=(r+s)%n,计算P=sG+tQ,若P=P1=kG，则验签成功
     r, s = sig
     if not (1 <= r < C.n and 1 <= s < C.n):
+        # 其实r=0,并不会造成什么影响
         return False
-    ZA = compute_ZA(user_id, pub, C)
-    e = int.from_bytes(sm3(ZA + msg), "big")
-    t = (r + s) % C.n
-    if t == 0:
+    t = (r + s) % C.n# t=(r+s)mod n
+    if t == 0:# 实际上，t=0只会导致公钥失效，即验签不依赖公钥，但仍不足以使攻击者伪造签名，因为ZA仍依赖公钥
         return False
-    P = point_add(scalar_mul(s, C.G, C), scalar_mul(t, pub, C), C)# P=sG+tQ,Q是公钥
+    P = point_add(scalar_mul(s, C.G, C), scalar_mul(t, pub, C), C)# P=sG+tQ,Q是公钥=dG
+    # 如果签名真实，则有P=(s+t*d)G,由于s+t*d=k,所以P=kG=P1故只需判定P和P1是否为同一点即可，判定其横坐标是否一致
     if P is None:
         return False
-    x1, _ = P
-    R = (e + x1) % C.n
+    x, _ = P
+    # P1横坐标x1有r=(e+x1)%n,所以只需要x有性质r=(e+x)%n即可，计算(e+x)%n=R，那么只需判断R==r?即可
+    # 计算e=SM2(ZA||M),ZA=SM2(...)均可由已知数值得到
+    ZA = compute_ZA(user_id, pub, C)
+    e = int.from_bytes(sm3(ZA + msg), "big")
+    R = (e + x) % C.n
     return R == r
 
-
-# ---------------------------------------------------------------------------
-# 六、SM2 公钥加密(GM/T 0003.4-2012, C1 || C3 || C2 输出)
-# ---------------------------------------------------------------------------
+# 六、SM2 公钥加密
 
 def _kdf(Z: bytes, klen: int) -> bytes:
     """SM3-based KDF:输出 klen 字节。"""
@@ -372,11 +331,8 @@ def decrypt_pke(ct: bytes, d: int, C: SM2Curve = SM2) -> bytes:
     return m
 
 
-# ---------------------------------------------------------------------------
-# 七、自检与演示
-# ---------------------------------------------------------------------------
 
-# GM/T 0004-2012 官方 SM3 测试向量
+# 七、自检与演示
 SM3_VECTORS = [
     (b"abc",
      bytes.fromhex("66c7f0f462eeedd9d1f2d46bdc10e4e24167c4875cf2f7a2297da02b8f4ba8e0")),
@@ -443,45 +399,42 @@ def selftest() -> bool:
 
 
 def demo() -> None:
-    print("=" * 60)
     print("SM2 国密 完整演示")
-    print("=" * 60)
-
     print("1) 生成密钥对")
     d, pub = generate_keypair()
-    print(f"   d (私) = {hex(d)[:34]}...")
-    print(f"   Q.x    = {hex(pub[0])[:34]}...")  # type: ignore
-    print(f"   Q.y    = {hex(pub[1])[:34]}...")  # type: ignore
-    print(f"   合法性 = {public_key_is_valid(pub)}")
+    print(f"d (私) = {hex(d)[:34]}...")
+    print(f"Q.x    = {hex(pub[0])[:34]}...")  # type: ignore
+    print(f"Q.y    = {hex(pub[1])[:34]}...")  # type: ignore
+    print(f"合法性 = {public_key_is_valid(pub)}")
 
     print()
     print("2) ZA 预处理 (创新点: 把用户身份注入签名)")
     ZA = compute_ZA(DEFAULT_ID, pub)
-    print(f"   用户 ID  : {DEFAULT_ID.decode()}")
-    print(f"   ZA (SM3): {ZA.hex()}")
+    print(f"用户 ID  : {DEFAULT_ID.decode()}")
+    print(f"ZA (SM3): {ZA.hex()}")
 
     print()
     print("3) SM2 数字签名")
     msg = "hello SM2 数字签名 2026".encode("utf-8")
     sig = sign(msg, d, pub)
-    print(f"   消息 : {msg.decode('utf-8')}")
-    print(f"   (r, s) = ({hex(sig[0])[:20]}..., {hex(sig[1])[:20]}...)")
-    print(f"   验证 : {verify(msg, sig, pub)}")
-    print(f"   篡改 : {verify(msg + b'?', sig, pub)}(应为 False)")
+    print(f"消息 : {msg.decode('utf-8')}")
+    print(f"(r, s) = ({hex(sig[0])[:20]}..., {hex(sig[1])[:20]}...)")
+    print(f"验证 : {verify(msg, sig, pub)}")
+    print(f"篡改 : {verify(msg + b'?', sig, pub)}(应为 False)")
 
     print()
     print("4) SM2 公钥加密 (C1||C3||C2)")
     plain = "SM2-PKE 演示 明文 message".encode("utf-8")
     ct = encrypt_pke(plain, pub)
     back = decrypt_pke(ct, d)
-    print(f"   明文  : {plain.decode('utf-8')}")
-    print(f"   密文  : 04 || x1(32) || y1(32) || C3(32) || C2({len(plain)})")
-    print(f"         hex[:64] = {ct.hex()[:64]}...")
-    print(f"   解密  : {back.decode('utf-8')}")
+    print(f"明文  : {plain.decode('utf-8')}")
+    print(f"密文  : 04 || x1(32) || y1(32) || C3(32) || C2({len(plain)})")
+    print(f"      hex[:64] = {ct.hex()[:64]}...")
+    print(f"解密  : {back.decode('utf-8')}")
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="SM2 国密从零实现 (SM3 + SM2-DSA + SM2-PKE)")
+    ap = argparse.ArgumentParser(description="SM3 + SM2-DSA + SM2-PKE")
     ap.add_argument("--selftest", action="store_true")
     ap.add_argument("--demo", action="store_true")
     args = ap.parse_args()
