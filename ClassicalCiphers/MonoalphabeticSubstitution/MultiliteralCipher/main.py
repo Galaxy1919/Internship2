@@ -67,7 +67,7 @@ import sys
 
 # 5×5 网格用的字母表:I 与 J 合并到 I(经典约定,让 25 个字母正好放下)
 ALPHABET = "ABCDEFGHIKLMNOPQRSTUVWXYZ"    # 注意:没有 J
-SIZE = 5
+SIZE = 5                                  # 方阵边长(行数=列数=5)
 
 
 # ---------------------------------------------------------------------------
@@ -76,18 +76,18 @@ SIZE = 5
 
 def normalize_key(key: str) -> str:
     """把密钥词规整成一串大写、去重、去 J 的字母序列。"""
-    seen = set()
-    out = []
-    for ch in key.upper():
-        if not ch.isalpha():
+    seen = set()          # 记录已经出现过的字母,用于去重
+    out = []              # 保存规整后字母序列的列表
+    for ch in key.upper():  # 统一转大写,让大小写不影响结果
+        if not ch.isalpha():  # 跳过空格、标点、数字等非字母字符
             continue
         if ch == "J":                # J -> I,和主字母表约定一致
             ch = "I"
-        if ch in seen:
+        if ch in seen:               # 重复字母:只保留第一次出现
             continue
-        seen.add(ch)
-        out.append(ch)
-    return "".join(out)
+        seen.add(ch)                 # 标记该字母已出现
+        out.append(ch)               # 首次出现的字母才进结果
+    return "".join(out)              # 列表拼成字符串返回
 
 
 def build_square(key: str = "") -> str:
@@ -96,14 +96,14 @@ def build_square(key: str = "") -> str:
     返回一个长 25 的字符串,按行优先展开。key 为空则退化成标准方阵
     ABCDE / FGHIK / LMNOP / QRSTU / VWXYZ。
     """
-    key = normalize_key(key)
-    letters = list(key)
-    for ch in ALPHABET:
-        if ch not in key:
+    key = normalize_key(key)         # 先把密钥词规整(大写/去重/去J)
+    letters = list(key)              # 方阵开头先放密钥字母
+    for ch in ALPHABET:              # 再按字母表顺序补齐剩余字母
+        if ch not in key:            # 只补密钥里没出现过的字母
             letters.append(ch)
-    if len(letters) != 25:
+    if len(letters) != 25:           # 防御性检查:方阵必须正好 25 个字母
         raise ValueError(f"方阵字母数异常:{len(letters)}(应为 25)")
-    return "".join(letters)
+    return "".join(letters)          # 返回行优先展开的 25 字符方阵
 
 
 def build_tables(square: str):
@@ -112,15 +112,15 @@ def build_tables(square: str):
     encode: {字母 -> "行列"}    如 {'H': '23'}
     decode: {"行列" -> 字母}    如 {'23': 'H'}
     """
-    encode = {}
-    decode = {}
-    for idx, ch in enumerate(square):
-        row = idx // SIZE + 1        # 1..5
-        col = idx % SIZE + 1
-        code = f"{row}{col}"
-        encode[ch] = code
-        decode[code] = ch
-    return encode, decode
+    encode = {}                      # 正向表:字母 -> 坐标字符串
+    decode = {}                      # 反向表:坐标字符串 -> 字母
+    for idx, ch in enumerate(square):  # 遍历方阵每个位置(0..24)
+        row = idx // SIZE + 1        # 行号:idx//5 得 0..4,加 1 变 1..5
+        col = idx % SIZE + 1         # 列号:idx%5 得 0..4,加 1 变 1..5
+        code = f"{row}{col}"         # 坐标拼成两位字符串,如 "23"
+        encode[ch] = code            # 正向映射:字母 -> "23"
+        decode[code] = ch            # 反向映射:"23" -> 字母
+    return encode, decode            # 两张表一起返回
 
 
 # ---------------------------------------------------------------------------
@@ -133,39 +133,39 @@ def encrypt(plain: str, key: str = "", sep: str = " ") -> str:
     参数 sep 只影响输出美观(默认空格分隔每对数字),不影响解密结果
     (解密会先剥离所有非数字字符再按 2 位一组切)。
     """
-    encode, _ = build_tables(build_square(key))
-    out = []
-    for ch in plain.upper():
-        if ch == "J":
+    encode, _ = build_tables(build_square(key))  # 构造方阵并取正向查表(丢弃反向表)
+    out = []                         # 存放每个字母对应的坐标
+    for ch in plain.upper():         # 明文统一转大写后逐字符处理
+        if ch == "J":                # J 视作 I,与方阵约定一致
             ch = "I"
-        if ch in encode:
+        if ch in encode:             # 是方阵里的字母就查表
             out.append(encode[ch])
         # 其它字符(空格、标点、数字)一律丢弃
-    return sep.join(out)
+    return sep.join(out)             # 用分隔符(默认空格)把坐标连成密文
 
 
 def decrypt(cipher: str, key: str = "") -> str:
     """解密:把密文里的数字按 2 位一组切开,查表反向恢复字母。"""
-    _, decode = build_tables(build_square(key))
-    digits = "".join(ch for ch in cipher if ch.isdigit())
-    if len(digits) % 2 != 0:
+    _, decode = build_tables(build_square(key))  # 构造方阵并取反向查表(丢弃正向表)
+    digits = "".join(ch for ch in cipher if ch.isdigit())  # 先剥掉空格/冒号等,只留数字
+    if len(digits) % 2 != 0:         # 数字个数必须是偶数,才能两两成组
         raise ValueError("密文数字个数不是偶数,无法按 2 位一组切分")
-    out = []
-    for i in range(0, len(digits), 2):
-        pair = digits[i:i + 2]
-        if pair not in decode:
+    out = []                         # 存放恢复出的字母
+    for i in range(0, len(digits), 2):  # 每 2 位一组推进
+        pair = digits[i:i + 2]       # 取出当前这一组坐标
+        if pair not in decode:       # 坐标非法(如含 0 或 6-9)则报错
             raise ValueError(f"非法坐标 {pair}(每一位应在 1-5)")
-        out.append(decode[pair])
-    return "".join(out)
+        out.append(decode[pair])     # 反向查表得到字母
+    return "".join(out)              # 拼成明文字符串
 
 
 def format_square(square: str) -> str:
     """把 25 字母方阵打印成好看的 5×5 网格。"""
-    lines = ["    1  2  3  4  5", "  +---------------"]
-    for r in range(SIZE):
-        row = square[r * SIZE:(r + 1) * SIZE]
-        lines.append(f"{r + 1} | " + "  ".join(row))
-    return "\n".join(lines)
+    lines = ["    1  2  3  4  5", "  +---------------"]  # 表头:列号 + 分隔线
+    for r in range(SIZE):            # 逐行
+        row = square[r * SIZE:(r + 1) * SIZE]  # 切出当前这一行的 5 个字母
+        lines.append(f"{r + 1} | " + "  ".join(row))  # 行号 + 行内容
+    return "\n".join(lines)          # 拼成多行字符串
 
 
 # ---------------------------------------------------------------------------
@@ -179,18 +179,18 @@ def selftest() -> bool:
     3. 关键字方阵 KEYWORD 下 ATTACK,期望值直接手算得出。
     另外验证若干轮明文的加密-解密往返一致。
     """
-    ok = True
+    ok = True                         # 总开关:任何一条失败都会置 False
 
     # 1. 标准方阵 HELLO
-    c1 = encrypt("HELLO")
-    expect1 = "23 15 31 31 34"
-    ok1 = c1 == expect1
+    c1 = encrypt("HELLO")             # 无密钥 -> 用标准方阵
+    expect1 = "23 15 31 31 34"        # 手算期望值
+    ok1 = c1 == expect1               # 对比实际与期望
     print(f"  [{'PASS' if ok1 else 'FAIL'}] 标准方阵 HELLO -> {c1}   期望 {expect1}")
-    ok = ok and ok1
+    ok = ok and ok1                   # 汇总进总开关
 
     # 2. J -> I 合并
-    c2 = encrypt("JAM")
-    expect2 = "24 11 32"       # I=24, A=11, M=32
+    c2 = encrypt("JAM")               # JAM 应等价于 IAM
+    expect2 = "24 11 32"              # I=24, A=11, M=32
     ok2 = c2 == expect2
     print(f"  [{'PASS' if ok2 else 'FAIL'}] J/I 合并 JAM   -> {c2}   期望 {expect2}")
     ok = ok and ok2
@@ -199,29 +199,29 @@ def selftest() -> bool:
     #    方阵首行 KEYWO,第二行 RDABC,...
     #    A=(2,3)=23  T=(5,1)=51  C=(2,5)=25  K=(1,1)=11
     #    ATTACK = 23 51 51 23 25 11
-    c3 = encrypt("ATTACK", key="KEYWORD")
-    expect3 = "23 51 51 23 25 11"
+    c3 = encrypt("ATTACK", key="KEYWORD")  # 带密钥词 -> 用打乱方阵
+    expect3 = "23 51 51 23 25 11"     # 手算期望值
     ok3 = c3 == expect3
     print(f"  [{'PASS' if ok3 else 'FAIL'}] key=KEYWORD ATTACK -> {c3}   期望 {expect3}")
     ok = ok and ok3
 
     # 4. 往返一致
-    samples = [
+    samples = [                       # (密钥, 明文) 测试样例
         ("", "ATTACK AT DAWN"),
         ("", "The quick brown fox"),
         ("POLYBIUS", "Meet me at midnight"),
         ("KEYWORD", "HELLO WORLD"),
     ]
     for k, p in samples:
-        c = encrypt(p, key=k)
-        back = decrypt(c, key=k)
+        c = encrypt(p, key=k)         # 先加密
+        back = decrypt(c, key=k)      # 再解密
         # 期望还原成:大写、去掉非字母、J->I 之后的字符串
         norm = "".join(("I" if ch == "J" else ch) for ch in p.upper() if ch.isalpha())
-        ok_round = back == norm
+        ok_round = back == norm       # 比较解密结果与规范化明文
         ok = ok and ok_round
         print(f"  [{'PASS' if ok_round else 'FAIL'}] 往返 key={k!r:<10} {p!r:30} -> {c}  还原={back}")
 
-    print("自检通过 ✓" if ok else "自检失败 ✗")
+    print("自检通过 ✓" if ok else "自检失败 ✗")  # 打印总体结果
     return ok
 
 
@@ -230,21 +230,21 @@ def selftest() -> bool:
 # ---------------------------------------------------------------------------
 
 def interactive() -> None:
-    print("=" * 50)
+    print("=" * 50)                    # 打印分隔线
     print("Multiliteral Cipher (Polybius Square 5×5)")
     print("=" * 50)
-    key = input("输入密钥词(可留空): ").strip()
-    square = build_square(key)
+    key = input("输入密钥词(可留空): ").strip()  # 读密钥词,去掉首尾空白
+    square = build_square(key)         # 构造方阵
     print("当前方阵:")
-    print(format_square(square))
+    print(format_square(square))       # 打印方阵供核对
     print("-" * 50)
 
-    plain = input("输入明文: ").strip() or "HELLO POLYBIUS"
-    cipher = encrypt(plain, key=key)
-    back = decrypt(cipher, key=key)
+    plain = input("输入明文: ").strip() or "HELLO POLYBIUS"  # 读明文,空输入用默认样例
+    cipher = encrypt(plain, key=key)   # 加密
+    back = decrypt(cipher, key=key)    # 解密回环
 
     print("-" * 50)
-    print(f"密钥词    : {key or '(无,使用标准 A-Z)'}")
+    print(f"密钥词    : {key or '(无,使用标准 A-Z)'}")  # 打印密钥(空则提示标准方阵)
     print(f"明文      : {plain}")
     print(f"密文      : {cipher}")
     print(f"解密还原  : {back}")
@@ -252,7 +252,7 @@ def interactive() -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Multiliteral Cipher(单表替换 / Polybius Square 5×5)")
+        description="Multiliteral Cipher(单表替换 / Polybius Square 5×5)")  # 命令行解析器
     parser.add_argument("-k", "--key", default="", help="密钥词(可选,默认标准方阵)")
     parser.add_argument("-t", "--text", help="要处理的文本(明文或密文)")
     parser.add_argument("-m", "--mode", choices=["encrypt", "decrypt"],
@@ -262,23 +262,23 @@ def main() -> int:
     parser.add_argument("--show-square", action="store_true",
                         help="打印当前使用的 5×5 方阵")
     parser.add_argument("--selftest", action="store_true", help="运行自检")
-    args = parser.parse_args()
+    args = parser.parse_args()         # 解析命令行参数
 
-    if args.selftest:
+    if args.selftest:                  # 自检模式:跑 selftest 并按结果返回退出码
         return 0 if selftest() else 1
 
-    if args.show_square:
+    if args.show_square:               # 只显示方阵
         print(format_square(build_square(args.key)))
-        if args.text is None:
+        if args.text is None:          # 没给文本:打印完方阵就结束
             return 0
 
-    if args.text is not None:
+    if args.text is not None:          # 命令行数据模式:处理 -t 传入的文本
         try:
-            if args.mode == "encrypt":
+            if args.mode == "encrypt":  # 按模式选择加密或解密
                 result = encrypt(args.text, key=args.key, sep=args.sep)
             else:
                 result = decrypt(args.text, key=args.key)
-        except ValueError as exc:
+        except ValueError as exc:       # 捕获非法输入(如坐标越界)
             print(f"错误:{exc}", file=sys.stderr)
             return 1
         print(f"密钥词    : {args.key or '(无)'}")
@@ -287,9 +287,9 @@ def main() -> int:
         print(f"输出      : {result}")
         return 0
 
-    interactive()
+    interactive()                      # 无参数则进入交互模式
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main())                   # 以 main() 返回值作为进程退出码
