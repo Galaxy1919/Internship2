@@ -87,7 +87,7 @@ def left_rotate(x: int, n: int) -> int:
 
 def pad_message(message: bytes) -> bytes:
     """按 MD5 规则填充:0x80 + 若干 0x00 + 8 字节小端位长度。"""
-    orig_len_bits = (len(message) * 8) & ((1 << 64) - 1)
+    orig_len_bits = (len(message) * 8) & ((1 << 64) - 1) # 只取低64位（含3位长度校验位）
     msg = bytearray(message)
     msg.append(0x80)                          # 追加一个"1"比特
     while len(msg) % 64 != 56:                # 补 0 到 mod 64 == 56
@@ -96,7 +96,7 @@ def pad_message(message: bytes) -> bytes:
     return bytes(msg)
 
 
-def process_block(state: tuple, block: bytes) -> tuple:
+def process_block(state: tuple, block: bytes) -> tuple:# 单块压缩
     """压缩一个 64 字节块,返回新的 (A, B, C, D)。"""
     a, b, c, d = state
     # 把块解成 16 个 32-bit 小端字
@@ -121,8 +121,8 @@ def process_block(state: tuple, block: bytes) -> tuple:
         # a <- d, d <- c, c <- b, b <- b + left_rotate(temp, S[i])
         a, d, c, b = d, c, b, (b + left_rotate(temp, S[i])) & MASK32
 
-    return (
-        (state[0] + a) & MASK32,
+    return (# 手动截断，防止报错struct.pack 在值超过 32 位时会直接抛 struct.error。
+        (state[0] + a) & MASK32,# 每一块只做这步一次，把当前的状态累加到初始的state[]里
         (state[1] + b) & MASK32,
         (state[2] + c) & MASK32,
         (state[3] + d) & MASK32,
@@ -131,9 +131,9 @@ def process_block(state: tuple, block: bytes) -> tuple:
 
 def md5(message: bytes) -> bytes:
     """计算 message 的 MD5 摘要,返回 16 字节。"""
-    padded = pad_message(message)
+    padded = pad_message(message)# 填充
     state = (A0, B0, C0, D0)
-    for off in range(0, len(padded), 64):
+    for off in range(0, len(padded), 64):# 64字节为一块，每块执行单块压缩
         state = process_block(state, padded[off:off + 64])
     # 每个 32-bit 字按小端拼回,总共 16 字节
     return struct.pack("<4I", *state)

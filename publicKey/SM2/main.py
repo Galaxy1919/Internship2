@@ -53,7 +53,6 @@ import struct
 from dataclasses import dataclass
 from typing import Optional, Tuple, List
 
-
 # ---------------------------------------------------------------------------
 # 一、SM3 摘要函数(手写实现,对齐 GM/T 0004-2012)
 # ---------------------------------------------------------------------------
@@ -125,6 +124,14 @@ def sm3(message: bytes) -> bytes:
 # ---------------------------------------------------------------------------
 # 二、SM2 曲线参数(GM/T 0003.5-2012 推荐参数)
 # ---------------------------------------------------------------------------
+
+# 密文C=C1||C3||C2
+# C1=k*G,k∈[1,n-1]随机数
+# C3=Hash(x2||M||y2)，其中(x2,y2)=k*pub,pub=d*G，d∈[1，n-1]随机，d作为私钥
+# C2=M⊕t,t=KDF(x2||y2,klen)
+# KDF(Z,klen):输入比特串Z，输出长度位klen的比特串K
+# 初始化32bit计数器ct=0x00000001,计算Hai=Hv(Z||ct++),Hv()这里为SM3,v代表Hv输出的长度
+# 由此循环ceiling(klen/v)次，最后一次可能有截断，由此得到的所有Ha拼接得到K=Ha1||Ha2||...
 
 Point = Optional[Tuple[int, int]]# Point=(x,y) or None(无穷远点)
 
@@ -231,7 +238,7 @@ def compute_ZA(user_id: bytes, pub: Point, C: SM2Curve = SM2) -> bytes:
 
     ZA = SM3( ENTL_A || ID_A || a || b || xG || yG || xA || yA )
       ENTL_A: ID_A 的比特长度(2 字节大端),其余为32字节大端
-    """
+    """# 仅用于签名与验签
     if pub is None:
         raise ValueError("公钥不能是无穷远")
     entl = (len(user_id) * 8).to_bytes(2, "big")
@@ -258,10 +265,10 @@ def sign(msg: bytes, d: int, pub: Point, user_id: bytes = DEFAULT_ID,
          C: SM2Curve = SM2, k: int | None = None) -> Tuple[int, int]:
     """SM2 签名 (r, s)。k 可选,便于向量对齐/攻击演示。"""
     ZA = compute_ZA(user_id, pub, C)
-    e = int.from_bytes(sm3(ZA + msg), "big")
+    e = int.from_bytes(sm3(ZA + msg), "big") # e=SM3(ZA||M)
     while True:
-        k_try = k if k is not None else (1 + secrets.randbelow(C.n - 1))
-        P1 = scalar_mul(k_try, C.G, C)
+        k_try = k if k is not None else (1 + secrets.randbelow(C.n - 1))# 随机选取k
+        P1 = scalar_mul(k_try, C.G, C)# P1=kG
         if P1 is None:
             if k is not None:
                 raise ValueError("指定的 k 生成无穷远点")
@@ -290,7 +297,7 @@ def verify(msg: bytes, sig: Tuple[int, int], pub: Point,
     t = (r + s) % C.n
     if t == 0:
         return False
-    P = point_add(scalar_mul(s, C.G, C), scalar_mul(t, pub, C), C)
+    P = point_add(scalar_mul(s, C.G, C), scalar_mul(t, pub, C), C)# P=sG+tQ,Q是公钥
     if P is None:
         return False
     x1, _ = P
