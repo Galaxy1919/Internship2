@@ -37,6 +37,7 @@ def f(r,k,variant=False):
  e=perm(r,E,32)^k; out=0
  for i in range(8):
   six=(e>>(42-6*i))&63; row=((six>>5)<<1)|(six&1); col=(six>>1)&15; box=S[i][row][col]
+  #创新点观察雪崩效应
   if variant and i==0: box=(box+1)&15
   out=(out<<4)|box
  return perm(out,P,32)
@@ -48,6 +49,55 @@ def pad(d):n=8-len(d)%8;return d+bytes([n])*n
 def unpad(d):n=d[-1];return d[:-n] if 1<=n<=8 and d[-n:]==bytes([n])*n else (_ for _ in()).throw(ValueError('填充错误：密钥不正确或密文损坏'))
 def encrypt(d,k,variant=False):return b''.join(block(p,k,variant=variant) for p in (pad(d)[i:i+8] for i in range(0,len(pad(d)),8)))
 def decrypt(d,k):return unpad(b''.join(block(d[i:i+8],k,dec=True) for i in range(0,len(d),8)))
+
+def is_weak_key(key):
+    """检测 DES 弱密钥：16 个子密钥全部相同。"""
+    ks = keys(key)
+    return all(k == ks[0] for k in ks)
+
+def is_semi_weak_key(key):
+    """检测半弱密钥：子密钥序列是回文（加密两次等于恒等映射）。"""
+    ks = keys(key)
+    return ks == ks[::-1]
+
+def complement_property_demo(key, plaintext):
+    """验证 DES 互补性质：E_k(P) = ~E_{~k}(~P)。"""
+    k2 = bytes(x ^ 0xFF for x in key)
+    p2 = bytes(x ^ 0xFF for x in plaintext)
+    c1 = block(plaintext, key)
+    c2 = block(p2, k2)
+    return c1, c2, bytes(x ^ 0xFF for x in c2) == c1
+
+def weak_key_scan():
+    """扫描 4 个已知弱密钥，验证加密=解密。"""
+    weak = [
+        bytes.fromhex("0101010101010101"),
+        bytes.fromhex("FEFEFEFEFEFEFEFE"),
+        bytes.fromhex("E0E0E0E0F1F1F1F1"),
+        bytes.fromhex("1F1F1F1F0E0E0E0E"),
+    ]
+    p = bytes.fromhex("0123456789ABCDEF")
+    print("\n--- 创新：DES 弱密钥检测 ---")
+    for k in weak:
+        c = block(p, k)
+        d = block(c, k, dec=True)
+        print(f"弱密钥={k.hex()} 加密={c.hex()} 解密={d.hex()} 相同={c==d} 判定={is_weak_key(k)}")
+
+def semi_weak_key_scan():
+    """扫描 12 个半弱密钥中的部分，验证加密两次=原明文。"""
+    semi = [
+        (bytes.fromhex("011F011F010E010E"), bytes.fromhex("1F011F010E010E01")),
+        (bytes.fromhex("01E001E001F101F1"), bytes.fromhex("E001E001F101F101")),
+        (bytes.fromhex("01FE01FE01FE01FE"), bytes.fromhex("FE01FE01FE01FE01")),
+    ]
+    p = bytes.fromhex("0123456789ABCDEF")
+    print("\n--- 创新：DES 半弱密钥对检测 ---")
+    for k1, k2 in semi:
+        c = block(p, k1)
+        c2 = block(c, k2)
+        print(f"K1={k1.hex()} K2={k2.hex()} 两次加密后={c2.hex()} 还原={c2==p}")
+
+
 def main():
     ap=argparse.ArgumentParser(); ap.add_argument('--variant',action='store_true'); a=ap.parse_args()
     k=bytes.fromhex('133457799BBCDFF1'); p=bytes.fromhex('0123456789ABCDEF')

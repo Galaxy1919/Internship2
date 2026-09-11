@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import ssl
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -18,6 +20,14 @@ class AgentConfig:
 
 class AgentError(RuntimeError):
     pass
+
+
+def _ssl_context() -> ssl.SSLContext:
+    """显式使用 macOS 系统 CA，避免 Finder 启动环境污染 SSL_CERT_FILE。"""
+    system_ca = "/private/etc/ssl/cert.pem"
+    if os.path.isfile(system_ca):
+        return ssl.create_default_context(cafile=system_ca)
+    return ssl.create_default_context()
 
 
 def _resolve_url(config: AgentConfig) -> str:
@@ -53,7 +63,7 @@ def _post_json(config: AgentConfig, payload: dict) -> dict:
     data = json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(url, data=data, headers=_auth_headers(config), method="POST")
     try:
-        with urllib.request.urlopen(request, timeout=config.timeout) as response:
+        with urllib.request.urlopen(request, timeout=config.timeout, context=_ssl_context()) as response:
             raw = response.read().decode("utf-8", errors="replace")
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")[:500]
@@ -61,7 +71,9 @@ def _post_json(config: AgentConfig, payload: dict) -> dict:
             raise AgentError(f"API 认证失败（HTTP 401）：{detail}\n请检查 API 地址/Key/认证方式。请求地址：{url}") from exc
         raise AgentError(f"API 请求失败（HTTP {exc.code}）：{detail}") from exc
     except urllib.error.URLError as exc:
-        raise AgentError(f"无法连接 API：{exc.reason}") from exc
+        raise AgentError(
+            f"无法连接 API：{exc.reason}\n请求地址：{url}\nPython：{__import__('sys').executable}"
+        ) from exc
     except TimeoutError as exc:
         raise AgentError("API 请求超时，请检查地址或网络") from exc
     try:
