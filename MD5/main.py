@@ -1,15 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-MD5 消息摘要算法实现
-====================
-
+MD5
 原理
-----
 MD5把任意长度的消息压缩成128位的摘要,是一种单向散列函数。
-
-算法分四步:
-
+算法步骤:
 1. 填充
    先在消息末尾追加一个0x80字节(即比特1后跟7个0),然后填0,
    直到长度对64取模等于56。最后附上原始消息的位长度(64位小端),
@@ -36,12 +31,7 @@ MD5把任意长度的消息压缩成128位的摘要,是一种单向散列函数�
 4. 输出
    把最终的 A/B/C/D 按小端序拼成 16 字节,即摘要。
 
-注意:MD5 已被证明存在实用的碰撞攻击(不同消息产生相同摘要),
-早已不适合做数字签名、证书、密码存储。本实现仅作为教学演示,
-用来核对文件完整性等非安全场景仍可见到,但不应用于任何安全用途。
-
-运行方式
---------
+运行
     python main.py                       # 交互模式
     python main.py -t 文本                # 命令行模式
     python main.py --selftest            # RFC 1321 官方测试向量自检
@@ -52,10 +42,7 @@ import math
 import struct
 import sys
 
-
-# ---------------------------------------------------------------------------
 # 常量表
-# ---------------------------------------------------------------------------
 
 # 每一步的循环左移量 s(4 轮各 16 步,每轮的 4 个数循环使用)
 S = (
@@ -65,25 +52,17 @@ S = (
     6, 10, 15, 21,  6, 10, 15, 21,  6, 10, 15, 21,  6, 10, 15, 21,   # Round 4
 )
 
-# T[i] = floor(2^32 * abs(sin(i+1))),i = 0..63。取 sin 是为了拿到
-# "看起来随机"的常数,消除结构性偏差。
+# T[i] = floor(2^32 * abs(sin(i+1))),i = 0..63。取 sin 是为了拿到伪随机数,消除结构性偏差。
 T = tuple(int(abs(math.sin(i + 1)) * (1 << 32)) & 0xFFFFFFFF for i in range(64))
 
 # 初始状态(小端字节序解读时依次是 01 23 45 67 89 ab cd ef ...)
 A0, B0, C0, D0 = 0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476
-
 MASK32 = 0xFFFFFFFF
-
-
-# ---------------------------------------------------------------------------
-# 核心算法
-# ---------------------------------------------------------------------------
 
 def left_rotate(x: int, n: int) -> int:
     """32 位循环左移。"""
     x &= MASK32
     return ((x << n) | (x >> (32 - n))) & MASK32
-
 
 def pad_message(message: bytes) -> bytes:
     """按 MD5 规则填充:0x80 + 若干 0x00 + 8 字节小端位长度。"""
@@ -95,13 +74,12 @@ def pad_message(message: bytes) -> bytes:
     msg += struct.pack("<Q", orig_len_bits)   # 8 字节小端位长度
     return bytes(msg)
 
-
 def process_block(state: tuple, block: bytes) -> tuple:# 单块压缩
     """压缩一个 64 字节块,返回新的 (A, B, C, D)。"""
     a, b, c, d = state
     # 把块解成 16 个 32-bit 小端字
     M = struct.unpack("<16I", block)
-
+    # 每一块做64轮变换
     for i in range(64):
         if i < 16:
             f = (b & c) | (~b & d)
@@ -143,12 +121,7 @@ def md5_hex(message: bytes) -> str:
     """返回 32 位小写十六进制字符串,和常见工具输出一致。"""
     return md5(message).hex()
 
-
-# ---------------------------------------------------------------------------
-# 测试
-# ---------------------------------------------------------------------------
-
-# RFC 1321 附录 A.5 的 7 组官方测试向量
+# 测试 用官方数据
 RFC1321_VECTORS = [
     (b"",                                                                 "d41d8cd98f00b204e9800998ecf8427e"),
     (b"a",                                                                "0cc175b9c0f1b6a831c399e269772661"),
@@ -160,7 +133,6 @@ RFC1321_VECTORS = [
                                                                           "57edf4a22be3c955ac49da2e2107b67a"),
 ]
 
-
 def selftest() -> bool:
     """用 RFC 1321 官方向量核对每一步实现是否正确。"""
     print("RFC 1321 测试向量:")
@@ -170,33 +142,27 @@ def selftest() -> bool:
         ok = actual == expected
         all_ok = all_ok and ok
         preview = msg.decode("ascii") if len(msg) <= 20 else msg[:17].decode("ascii") + "..."
-        print(f"  [{'PASS' if ok else 'FAIL'}] MD5({preview!r:24}) = {actual}")
+        print(f"[{'PASS' if ok else 'FAIL'}] MD5({preview!r:24}) = {actual}")
         if not ok:
-            print(f"         期望         = {expected}")
+            print(f"期望= {expected}")
 
     # 顺带核对一次中文往返,确认 UTF-8 也能算
-    zh = "MD5 测试 中文".encode("utf-8")
+    zh = "MD5测试中文".encode("utf-8")
     zh_hex = md5_hex(zh)
-    print(f"  中文 UTF-8 摘要: {zh_hex}")
+    print(f"中文 UTF-8 摘要: {zh_hex}")
 
-    print("自检通过 ✓" if all_ok else "自检失败 ✗")
+    print("自检通过" if all_ok else "自检失败")
     return all_ok
 
-
-# ---------------------------------------------------------------------------
 # 交互入口
-# ---------------------------------------------------------------------------
 
 def interactive() -> None:
-    print("=" * 46)
     print("MD5 消息摘要")
-    print("=" * 46)
     text = input("输入消息: ").strip()
     if text == "":
         print("(空消息)")
     data = text.encode("utf-8")
     digest = md5_hex(data)
-    print("-" * 46)
     print(f"消息        : {text}")
     print(f"字节长度    : {len(data)}")
     print(f"MD5(hex)    : {digest}")
