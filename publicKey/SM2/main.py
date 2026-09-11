@@ -24,27 +24,21 @@ from typing import Optional, Tuple, List
 _IV = (0x7380166F, 0x4914B2B9, 0x172442D7, 0xDA8A0600,
        0xA96F30BC, 0x163138AA, 0xE38DEE4D, 0xB0FB0E4E)
 
-
-def _rotl(x: int, n: int) -> int:
+def _rotl(x: int, n: int) -> int:# 循环移位
     n &= 31
     return ((x << n) | (x >> (32 - n))) & 0xFFFFFFFF
 
-
-def _P0(x: int) -> int:
+def _P0(x: int) -> int:# 线性置换
     return x ^ _rotl(x, 9) ^ _rotl(x, 17)
-
 
 def _P1(x: int) -> int:
     return x ^ _rotl(x, 15) ^ _rotl(x, 23)
 
-
-def _ff(j: int, x: int, y: int, z: int) -> int:
+def _ff(j: int, x: int, y: int, z: int) -> int:# 非线性混淆
     return (x ^ y ^ z) if j < 16 else ((x & y) | (x & z) | (y & z))
-
 
 def _gg(j: int, x: int, y: int, z: int) -> int:
     return (x ^ y ^ z) if j < 16 else ((x & y) | ((~x) & 0xFFFFFFFF & z))
-
 
 def sm3(message: bytes) -> bytes:
     """SM3(m):返回 32 字节摘要。"""
@@ -129,6 +123,7 @@ def _modinv(x: int, p: int) -> int:# 模逆运算
 # SM2 推荐素数 p = 2^256 - 2^224 - 2^96 + 2^64 - 1 是广义梅森素数,
 # 由此可推出:  2^256 ≡ 2^224 + 2^96 - 2^64 + 1   (mod p)
 # 用这条同余式把中间值(最多 512 位)的高 256 位反复"折叠"到低位,
+# 设X为一个至多512位的数，写成H*2^256+L,mod p下，H*2^256+L=H*(2^224 + 2^96 - 2^64 + 1)+L
 # 最后只需少量条件减法即可落到 [0, p),规避一次大整数长除法(即通用的 x % p)。
 
 _MASK256 = (1 << 256) - 1
@@ -446,7 +441,7 @@ def selftest() -> bool:
     v1 = verify(msg, sig, pub)
     v2 = verify(msg + b"!", sig, pub)
     sign_ok = v1 and (not v2)
-    print(f"  [{'PASS' if sign_ok else 'FAIL'}] SM2 签名: 正确={v1}, 篡改={not v2}")
+    print(f"  [{'PASS' if sign_ok else 'FAIL'}] SM2 签名: 正确={v1}, 篡改={v2}")
     ok = ok and sign_ok
 
     # 5. 公钥加密往返

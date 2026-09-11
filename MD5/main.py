@@ -99,7 +99,7 @@ def process_block(state: tuple, block: bytes) -> tuple:# 单块压缩
         # a <- d, d <- c, c <- b, b <- b + left_rotate(temp, S[i])
         a, d, c, b = d, c, b, (b + left_rotate(temp, S[i])) & MASK32
 
-    return (# 手动截断，防止报错struct.pack 在值超过 32 位时会直接抛 struct.error。
+    return (# 手动截断，防止报错。struct.pack 在值超过 32 位时会直接抛 struct.error。
         (state[0] + a) & MASK32,# 每一块只做这步一次，把当前的状态累加到初始的state[]里
         (state[1] + b) & MASK32,
         (state[2] + c) & MASK32,
