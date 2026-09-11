@@ -84,10 +84,7 @@ def sm3(message: bytes) -> bytes:
 
     return struct.pack(">8I", *V)
 
-
-
 # 二、SM2 曲线参数(GM/T 0003.5-2012 推荐参数)
-
 
 # 密文C=C1||C3||C2
 # C1=k*G,k∈[1,n-1]随机数
@@ -123,13 +120,36 @@ SM2 = SM2Curve(
     n=0xFFFFFFFEFFFFFFFFFFFFFFFFFFFFFFFF7203DF6B21C6052B53BBF40939D54123,
 )# GM/T 0003.5标准参数
 
-
-
-# 三、椭圆曲线群运算(与 publicKey/ECC 模块保持一致的教学接口)
-
-
+# 三、椭圆曲线相关
 def _modinv(x: int, p: int) -> int:# 模逆运算
     return pow(x, -1, p)
+
+
+# 优化一: SM2 曲线参数特化的快速模约减
+# SM2 推荐素数 p = 2^256 - 2^224 - 2^96 + 2^64 - 1 是广义梅森素数,
+# 由此可推出:  2^256 ≡ 2^224 + 2^96 - 2^64 + 1   (mod p)
+# 用这条同余式把中间值(最多 512 位)的高 256 位反复"折叠"到低位,
+# 最后只需少量条件减法即可落到 [0, p),规避一次大整数长除法(即通用的 x % p)。
+
+_MASK256 = (1 << 256) - 1
+
+def _fast_mod_p(x: int, C: SM2Curve = SM2) -> int:
+    """基于 SM2 素数结构的快速模约减,等价于 x % C.p 但走的是加/减/移位。"""
+    p = C.p
+    # 负数不是主路径(减法可能出现),回退到内建即可
+    if x < 0:
+        return x % p
+    # 高位折叠:每轮把最高的 H 项打散成 (H<<224)+(H<<96)-(H<<64)+H,
+    # 由于 2^224 > 2^64,单轮结果保持非负;每轮最高位收缩 ~32 位,
+    # 从最坏 512 位收敛到 256 位以内只需约 8 轮
+    while x > _MASK256:
+        H = x >> 256
+        L = x & _MASK256
+        x = L + (H << 224) + (H << 96) - (H << 64) + H
+    # 尾部:此时 x 已在 [0, 2*p) 附近,最多几次减法就能落进 [0, p)
+    while x >= p:
+        x -= p
+    return x
 
 
 def is_on_curve(P: Point, C: SM2Curve = SM2) -> bool:
@@ -137,7 +157,6 @@ def is_on_curve(P: Point, C: SM2Curve = SM2) -> bool:
         return True
     x, y = P
     return (y * y - (x * x * x + C.a * x + C.b)) % C.p == 0
-
 
 def point_add(P: Point, Q: Point, C: SM2Curve = SM2) -> Point:
     if P is None:
@@ -156,7 +175,6 @@ def point_add(P: Point, Q: Point, C: SM2Curve = SM2) -> Point:
     y3 = (lam * (x1 - x3) - y1) % C.p
     return (x3, y3)
 
-
 def scalar_mul(k: int, P: Point, C: SM2Curve = SM2) -> Point:
     if k == 0 or P is None:
         return None
@@ -172,7 +190,6 @@ def scalar_mul(k: int, P: Point, C: SM2Curve = SM2) -> Point:
         k >>= 1
     return result
 
-
 def public_key_is_valid(pub: Point, C: SM2Curve = SM2) -> bool:# 公钥合法性检查
     if pub is None:# 无穷远点不合法
         return False
@@ -184,18 +201,15 @@ def public_key_is_valid(pub: Point, C: SM2Curve = SM2) -> bool:# 公钥合法性
     return scalar_mul(C.n, pub, C) is None # n*Q!=O不合法，n作为G的阶，有n*G=O,Q=d*G,所以n*Q=n*G*d=O*d应当=O
 
 # 四、密钥对与 ZA 预处理
-
 def generate_keypair(C: SM2Curve = SM2) -> Tuple[int, Point]:
     d = 1 + secrets.randbelow(C.n - 1)# 生成密钥，d∈[1,n-1]
     return d, scalar_mul(d, C.G, C) # 公钥Q=scalar_mul(d, C.G, C)=d*G
-
 
 def _int_to_bytes(x: int, n: int) -> bytes:
     return x.to_bytes(n, "big")
 
 def compute_ZA(user_id: bytes, pub: Point, C: SM2Curve = SM2) -> bytes:
     """SM2-DSA 的 ZA 预处理:把用户 ID、曲线参数、公钥一起哈希,后续再和消息拼接。
-
     ZA = SM3( ENTL_A || ID_A || a || b || xG || yG || xA || yA )
       ENTL_A: ID_A 的比特长度(2 字节大端),其余为32字节大端
     """# 仅用于签名与验签
@@ -217,7 +231,6 @@ def compute_ZA(user_id: bytes, pub: Point, C: SM2Curve = SM2) -> bytes:
 
 DEFAULT_ID = b"1234567812345678"  # GM/T 0003.5 默认标识
 
-
 def sign(msg: bytes, d: int, pub: Point, user_id: bytes = DEFAULT_ID,
          C: SM2Curve = SM2, k: int | None = None) -> Tuple[int, int]:
     """SM2 签名 (r, s)。k 可选,便于向量对齐/攻击演示。"""
@@ -237,6 +250,67 @@ def sign(msg: bytes, d: int, pub: Point, user_id: bytes = DEFAULT_ID,
                 raise ValueError("指定的 k 无效(r=0 或 r+k=n)")
             continue
         s = (_modinv(1 + d, C.n) * (k_try - r * d)) % C.n # s=(1+d)^(-1)*(k-r*d) mod n=>k=s+t*d mod n
+        if s == 0:
+            if k is not None:
+                raise ValueError("指定的 k 导致 s=0")
+            continue
+        return r, s
+
+# 优化二：签名求逆预计算
+# SM2 签名公式:  s = ((1+d)^(-1) * (k - r*d)) mod n
+# 其中 (1+d)^(-1) mod n 只与私钥 d 有关,与消息/随机数无关。
+# 常规实现每次签名都调一次 pow(x, -1, n) 做扩展欧几里得,开销显著;
+# 服务端常驻私钥时,把这个逆元预先算好并和 d、ZA 一起缓存,
+# 之后每次签名就只剩椭圆曲线点乘 + 两次模乘 + 一次模减,签名吞吐显著提升。
+
+@dataclass(frozen=True)
+class SM2SigningKey:
+    """提前算好(1+d)^(-1) mod n,下次遇到同一 (私钥, 用户ID)可直接用。"""
+    d: int                # 私钥
+    pub: Point            # 对应公钥 d*G
+    d1_inv: int           # (1 + d)^(-1) mod n
+    ZA: bytes             # SM3 预处理值,只依赖 (user_id, pub, 曲线参数)
+    user_id: bytes
+    curve: SM2Curve
+
+def make_signing_key(d: int, pub: Point | None = None,
+                     user_id: bytes = DEFAULT_ID,
+                     C: SM2Curve = SM2) -> SM2SigningKey:
+    """一次性预计算 (1+d)^(-1) mod n 和 ZA,返回可反复使用的签名句柄。"""
+    if not (1 <= d < C.n - 1):
+        raise ValueError("私钥 d 必须落在 [1, n-2]")
+    if pub is None:
+        pub = scalar_mul(d, C.G, C)
+    # 基本信赖调用方，对于不合规的情况稍做处理
+    if pub is None or not public_key_is_valid(pub, C):
+        raise ValueError("公钥不合法或与私钥不匹配")
+    if (1 + d) % C.n == 0:
+        raise ValueError("(1+d) 恰好为 n 的倍数,该私钥无法用于签名")
+    d1_inv = _modinv(1 + d, C.n)
+    ZA = compute_ZA(user_id, pub, C)
+    return SM2SigningKey(d=d, pub=pub, d1_inv=d1_inv,
+                         ZA=ZA, user_id=user_id, curve=C)
+
+def sign_fast(msg: bytes, sk: SM2SigningKey,
+              k: int | None = None) -> Tuple[int, int]:
+    """使用预计算过的 SM2SigningKey 快速签名,语义等同于 sign()。"""
+    C = sk.curve
+    e = int.from_bytes(sm3(sk.ZA + msg), "big")
+    while True:
+        k_try = k if k is not None else (1 + secrets.randbelow(C.n - 1))
+        P1 = scalar_mul(k_try, C.G, C)
+        if P1 is None:
+            if k is not None:
+                raise ValueError("指定的 k 生成无穷远点")
+            continue
+        x1, _ = P1
+        r = (e + x1) % C.n
+        if r == 0 or (r + k_try) % C.n == 0:
+            if k is not None:
+                raise ValueError("指定的 k 无效(r=0 或 r+k=n)")
+            continue
+        # 不再调用 _modinv(1+d, n),直接用预计算的 d1_inv
+        s = (sk.d1_inv * (k_try - r * sk.d)) % C.n
         if s == 0:
             if k is not None:
                 raise ValueError("指定的 k 导致 s=0")
@@ -393,6 +467,48 @@ def selftest() -> bool:
         integ_ok = True
     print(f"  [{'PASS' if integ_ok else 'FAIL'}] SM2-PKE 完整性: 篡改 C3 被拒绝")
     ok = ok and integ_ok
+
+    # 7. 优化一: 快速模约减与内建取模等价
+    import random as _rnd
+    _rnd.seed(0xC0FFEE)
+    fast_ok = True
+    for _ in range(200):
+        v = _rnd.getrandbits(512)      # 覆盖典型的模乘中间值宽度
+        if _fast_mod_p(v) != v % SM2.p:
+            fast_ok = False
+            break
+    # 边界值也过一遍
+    for v in (0, 1, SM2.p - 1, SM2.p, SM2.p + 1, (1 << 256) - 1, (1 << 512) - 1):
+        if _fast_mod_p(v) != v % SM2.p:
+            fast_ok = False
+            break
+    print(f"  [{'PASS' if fast_ok else 'FAIL'}] 快速模约减 _fast_mod_p 与 x % p 等价")
+    ok = ok and fast_ok
+
+    # 8. 优化二: sign_fast 与 sign 语义一致且可被 verify 通过
+    sk = make_signing_key(d, pub)
+    k_fixed = 1 + secrets.randbelow(SM2.n - 1)
+    r1, s1 = sign(msg, d, pub, k=k_fixed)
+    r2, s2 = sign_fast(msg, sk, k=k_fixed)
+    same = (r1, s1) == (r2, s2)
+    v_fast = verify(msg, (r2, s2), pub)
+    print(f"  [{'PASS' if (same and v_fast) else 'FAIL'}] sign_fast 与 sign 结果一致且可验签")
+    ok = ok and same and v_fast
+
+    # 9. 优化二: 简单基准,展示预计算带来的加速比
+    import time as _t
+    N = 30
+    t0 = _t.perf_counter()
+    for _ in range(N):
+        sign(msg, d, pub)
+    t_slow = _t.perf_counter() - t0
+    t0 = _t.perf_counter()
+    for _ in range(N):
+        sign_fast(msg, sk)
+    t_fast = _t.perf_counter() - t0
+    speedup = t_slow / t_fast if t_fast > 0 else float("inf")
+    print(f"  [INFO] 签名基准 N={N}: sign={t_slow*1000:.1f}ms  "
+          f"sign_fast={t_fast*1000:.1f}ms  加速 x{speedup:.2f}")
 
     print("自检通过 ✓" if ok else "自检失败 ✗")
     return ok
