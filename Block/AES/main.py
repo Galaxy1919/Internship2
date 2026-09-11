@@ -86,9 +86,72 @@ def encrypt(data,key): return b''.join(encrypt_block(p,key) for p in (pad(data)[
 def decrypt(data,key):
     if len(data)%16: raise ValueError('密文长度必须是16的倍数')
     return unpad(b''.join(decrypt_block(data[i:i+16],key) for i in range(0,len(data),16)))
+
+#创新点：雪崩效应测试
 def avalanche_demo(p,key):
     c,t=encrypt_block(p,key,True); q=bytearray(p); q[0]^=1; c2,t2=encrypt_block(bytes(q),key,True)
     return c,c2,[sum((a^b).bit_count() for a,b in zip(x,y)) for x,y in zip(t,t2)]
+
+# ================= 创新点：ECB / CBC / CTR 工作模式对比 =================
+def cbc_encrypt(data, key, iv):
+    """CBC 模式加密：每块明文先与前一密文块异或，再送入 AES。"""
+    data = pad(data)
+    out = b''
+    prev = iv
+    for i in range(0, len(data), 16):
+        block_in = xor(data[i:i+16], prev)
+        c = encrypt_block(block_in, key)
+        out += c
+        prev = c
+    return out
+
+def cbc_decrypt(data, key, iv):
+    """CBC 模式解密。"""
+    out = b''
+    prev = iv
+    for i in range(0, len(data), 16):
+        c = data[i:i+16]
+        p = xor(decrypt_block(c, key), prev)
+        out += p
+        prev = c
+    return unpad(out)
+
+def ctr_encrypt(data, key, nonce=0):
+    """CTR 模式：计数器块加密后与明文异或，加密/解密同一函数。"""
+    out = b''
+    counter = nonce
+    for i in range(0, len(data), 16):
+        ks = encrypt_block(counter.to_bytes(16, 'big'), key)
+        chunk = data[i:i+16]
+        out += bytes(a ^ b for a, b in zip(chunk, ks))
+        counter += 1
+    return out
+
+def mode_compare_demo(key):
+    """用重复数据对比 ECB / CBC / CTR 三种模式对重复块的隐藏能力。"""
+    plaintext = b'A'*16 + b'B'*16 + b'A'*16 + b'B'*16   # 两块 A、两块 B 交替
+    iv = b'\x00' * 16
+
+    ecb = encrypt(plaintext, key)
+    cbc = cbc_encrypt(plaintext, key, iv)
+    ctr = ctr_encrypt(plaintext, key)
+
+    def show(name, ct):
+        blocks = [ct[i:i+16].hex() for i in range(0, len(ct), 16)]
+        repeats = len(blocks) != len(set(blocks))
+        print(f"{name}: 块序列={blocks}")
+        print(f"{name}: 存在重复密文块 = {repeats}")
+
+    print("\n--- 创新：AES 工作模式对比 ---")
+    show("ECB", ecb)
+    show("CBC", cbc)
+    show("CTR", ctr)
+
+    # 验证 CBC / CTR 可正确解密
+    assert cbc_decrypt(cbc, key, iv) == plaintext, "CBC 解密失败"
+    assert ctr_encrypt(ctr, key) == plaintext, "CTR 解密失败"
+    print("CBC / CTR 解密验证: PASS")
+
 
 def main():
     key=b'example-aes-key!'; p=b'0123456789abcdef'

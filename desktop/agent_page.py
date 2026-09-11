@@ -19,6 +19,22 @@ SCENES = [
     ("加密保险箱", "请用口令「123456」把这条秘密加密保存（模拟保险箱），再解密取回验证："),
 ]
 DEFAULT_MESSAGE = "这是一条需要保护的秘密消息"
+DEFAULT_BASE_URL = "https://api.deepseek.com"
+DEFAULT_MODEL = "deepseek-v4-flash"
+
+
+def load_agent_config(settings: QSettings) -> AgentConfig:
+    """启动时统一读取本机 Key，并固定使用 DeepSeek 官方地址和模型。"""
+    # 地址和模型不再采用可能残留的旧值，避免 deepseek-flash 等旧配置导致请求失败。
+    base_url = DEFAULT_BASE_URL
+    model = DEFAULT_MODEL
+    api_key = str(settings.value("api_key", "") or "").strip()
+    auth_mode = str(settings.value("auth_mode", "bearer") or "bearer").strip()
+    settings.setValue("base_url", base_url)
+    settings.setValue("model", model)
+    settings.setValue("auth_mode", auth_mode)
+    settings.sync()
+    return AgentConfig(base_url, api_key, model, auth_mode, "Authorization")
 
 
 class SettingsDialog(QDialog):
@@ -29,11 +45,13 @@ class SettingsDialog(QDialog):
         form = QFormLayout(self)
         form.setContentsMargins(24, 24, 24, 16)
         form.setSpacing(12)
-        self.base = QLineEdit(settings.value("base_url", "https://api.deepseek.com"))
+        self.base = QLineEdit(DEFAULT_BASE_URL)
+        self.base.setReadOnly(True)
         self.base.setPlaceholderText("例如：https://api.deepseek.com")
-        self.model = QLineEdit(settings.value("model", "deepseek-v4-flash"))
+        self.model = QLineEdit(DEFAULT_MODEL)
+        self.model.setReadOnly(True)
         self.model.setPlaceholderText("例如：deepseek-v4-flash")
-        self.key = QLineEdit(settings.value("api_key", ""))
+        self.key = QLineEdit(str(settings.value("api_key", "") or ""))
         self.key.setEchoMode(QLineEdit.EchoMode.Password)
         self.key.setPlaceholderText("请输入 API Key")
         form.addRow("API 地址", self.base)
@@ -98,7 +116,7 @@ class AgentPage(QWidget):
         title_col.addWidget(self._label("实验智能助手", "pageTitle"))
         header.addLayout(title_col)
         header.addStretch()
-        self.connection = self._label("● 未连接", "muted")
+        self.connection = self._label("● 已配置，待测试", "muted")
         header.addWidget(self.connection)
         settings_btn = QPushButton("设置")
         settings_btn.clicked.connect(self.open_settings)
@@ -162,7 +180,7 @@ class AgentPage(QWidget):
     def open_settings(self):
         dialog = SettingsDialog(self.settings, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            self.connection.setText("● 配置已保存")
+            self.connection.setText("● 已配置，待测试")
 
     # ---------- 气泡 ----------
     def add_user(self, text: str):
@@ -270,13 +288,7 @@ class AgentPage(QWidget):
         self.send_btn.setEnabled(False)
         self.connection.setText("● 编排中...")
         self.status.setText("正在调用密码原语并编排...")
-        config = AgentConfig(
-            self.settings.value("base_url", ""),
-            self.settings.value("api_key", ""),
-            self.settings.value("model", ""),
-            self.settings.value("auth_mode", "bearer"),
-            "Authorization",
-        )
+        config = load_agent_config(self.settings)
         self.worker = AgentWorker(config, text)
         self.worker.step.connect(self.on_step)
         self.worker.completed.connect(self.on_answer)

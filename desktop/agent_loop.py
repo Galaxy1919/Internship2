@@ -47,7 +47,7 @@ def execute_tool(name: str, args: dict) -> tuple[str, bool]:
             continue
         cmd += [f"--{key}", str(value)]
     try:
-        p = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
     except subprocess.TimeoutExpired:
         return "工具执行超时", False
     out = (p.stdout or "").strip()
@@ -57,7 +57,22 @@ def execute_tool(name: str, args: dict) -> tuple[str, bool]:
     return (err + ("\n" + out if out else "")).strip(), False
 
 
-def run_agent(config: AgentConfig, user_request: str, on_step=None, max_steps: int = 12):
+def _finalize(config: AgentConfig, messages: list[dict]) -> str:
+    """让模型只根据已有真实工具结果收尾，避免收尾阶段再次调用工具。"""
+    final_messages = list(messages)
+    final_messages.append({
+        "role": "user",
+        "content": "请停止调用任何工具。只根据上面已经返回的真实结果，用中文给出简洁的最终回答；如果某一步失败，请明确说明，不要编造结果。",
+    })
+    resp = chat_completion(config, final_messages)
+    msg = extract_message(resp)
+    content = msg.get("content")
+    if isinstance(content, str) and content.strip():
+        return content.strip()
+    return "工具已经执行，但模型没有返回最终说明。请查看上方的真实工具结果。"
+
+
+def run_agent(config: AgentConfig, user_request: str, on_step=None, max_steps: int = 8):
     """ReAct 循环：think → act → observe，直到模型给出最终结论或达到步数上限。
 
     返回 (final_answer: str, steps: list)。steps 供 UI 展示编排过程：
@@ -69,6 +84,7 @@ def run_agent(config: AgentConfig, user_request: str, on_step=None, max_steps: i
     ]
     steps: list[dict] = []
 
+    recent_calls: list[tuple[str, str]] = []
     for _ in range(max_steps):
         resp = chat_completion(config, messages, TOOLS)
         msg = extract_message(resp)
@@ -89,6 +105,8 @@ def run_agent(config: AgentConfig, user_request: str, on_step=None, max_steps: i
                 args = json.loads(fn.get("arguments") or "{}")
             except json.JSONDecodeError:
                 args = {}
+            call_signature = (name, json.dumps(args, ensure_ascii=False, sort_keys=True))
+            recent_calls.append(call_signature)
             result, ok = execute_tool(name, args)
             step = {"type": "tool_call", "name": name, "args": args, "result": result, "ok": ok}
             steps.append(step)
@@ -96,4 +114,9 @@ def run_agent(config: AgentConfig, user_request: str, on_step=None, max_steps: i
                 on_step(step)
             messages.append({"role": "tool", "tool_call_id": tc["id"], "content": result})
 
-    return "已达到最大执行步数，请缩小任务范围重试。", steps
+            # 同一工具和参数连续重复，通常表示模型没有正确收束；保留真实结果，
+            # 但转入无工具收尾，避免桌面端无限等待。
+            if len(recent_calls) >= 2 and recent_calls[-1] == recent_calls[-2]:
+                return _finalize(config, messages), steps
+
+    return _finalize(config, messages), steps
