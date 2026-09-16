@@ -85,10 +85,91 @@ def ca_keystream(key: bytes,
     return bytes(keystream[:n_bytes])
 
 
+# --------------------------------------------
+# 优化: 位并行 (bitwise parallel) 版本
+# --------------------------------------------
+# 思路: 把 n 个 cell 打包进一个 Python 大整数,
+#   约定 "cell[i] 位于该整数的 bit (n-1-i)",也就是 cell[0] 是最高位、
+#   cell[n-1] 是最低位。这与原实现拼字节时 (byte_val<<1)|state[i]
+#   的高位在前顺序完全一致,便于 state.to_bytes 直接落盘。
+#
+# 一步演化只需两次移位构造左右邻居 + 至多 8 次位与/或,即可在一个大整数上
+# 同时算出所有 n 个 cell 的新状态,把 Python 内层 for 循环彻底消掉。
+#
+# 出字节同样绕开逐位拼装: state.to_bytes(n//8, 'big') 一次成型 (即优化3)。
+
+def _rule_masks(rule: int, full_mask: int) -> tuple:
+    """把规则拆成邻居模式索引, 与原 build_rule_table 保持完全一致的语义:
+    原实现里 table[idx] = (rule >> (7-idx)) & 1, 也就是 pattern p (0..7)
+    对应 rule 的 bit (7-p)。这里沿用同一约定, 只保留输出为 1 的 pattern,
+    返回 [(need_L, need_C, need_R), ...] 供位并行组合使用。
+    """
+    triggers = []
+    for p in range(8):
+        if (rule >> (7 - p)) & 1:
+            triggers.append(((p >> 2) & 1, (p >> 1) & 1, p & 1))
+    return triggers
+
+
+def ca_step_bitparallel(state: int, rule: int, n: int,
+                        full_mask: int, triggers: list) -> int:
+    """位并行一步演化。state 是打包好的 n-bit 整数, 返回新的 n-bit 整数。"""
+    # 环形左右邻居: 沿 bit 位方向的"左邻"其实是 bit 更高一位, "右邻"是更低一位。
+    # 因为 cell[i] 在 bit (n-1-i), cell[i-1] 在 bit (n-i), 比自己高一位。
+    #   → 邻居"左" L 通过 state 右移 1 得到,并把最低位环绕到最高位;
+    #   → 邻居"右" R 通过 state 左移 1 得到,并把最高位环绕到最低位。
+    hi_bit = 1 << (n - 1)
+    L = ((state >> 1) | ((state & 1) << (n - 1))) & full_mask
+    R = ((state << 1) & full_mask) | ((state & hi_bit) >> (n - 1))
+    C = state
+
+    # 对每一个 rule 中为 1 的邻居模式,用位与筛出所有匹配位置,再或进结果
+    result = 0
+    for need_l, need_c, need_r in triggers:
+        ml = L if need_l else (L ^ full_mask)      # ~L 但保持在 n 位内
+        mc = C if need_c else (C ^ full_mask)
+        mr = R if need_r else (R ^ full_mask)
+        result |= ml & mc & mr
+    return result & full_mask
+
+
+def _pack_bits(bits: list) -> int:
+    """把 [b0, b1, ..., b_{n-1}] 打包成整数, b0 在最高位。"""
+    v = 0
+    for b in bits:
+        v = (v << 1) | (b & 1)
+    return v
+
+
+def ca_keystream_fast(key: bytes,
+                      n_bytes: int,
+                      rule: int = DEFAULT_RULE,
+                      cells: int = DEFAULT_CELLS,
+                      warmup: int = WARMUP_STEPS) -> bytes:
+    """位并行 + 整块出字节。语义与 ca_keystream 完全一致。"""
+    if cells % 8 != 0:
+        # 出字节要求整字节,不整除时退回原实现以保证正确性
+        return ca_keystream(key, n_bytes, rule=rule, cells=cells, warmup=warmup)
+
+    full_mask = (1 << cells) - 1
+    triggers = _rule_masks(rule, full_mask)
+    state = _pack_bits(key_to_seed_cells(key, cells))
+
+    for _ in range(warmup):
+        state = ca_step_bitparallel(state, rule, cells, full_mask, triggers)
+
+    step_bytes = cells // 8
+    keystream = bytearray()
+    while len(keystream) < n_bytes:
+        state = ca_step_bitparallel(state, rule, cells, full_mask, triggers)
+        keystream += state.to_bytes(step_bytes, "big")
+    return bytes(keystream[:n_bytes])
+
+
 def ca_crypt(data: bytes, key: bytes, rule: int = DEFAULT_RULE) -> bytes:
-    """加密与解密是同一个操作:数据与密钥流逐字节异或。"""
+    """加密与解密是同一个操作:数据与密钥流逐字节异或。默认走位并行快速路径。"""
     # 明文⊕密钥流=密文，密文⊕密钥流=明文
-    keystream = ca_keystream(key, len(data), rule=rule)
+    keystream = ca_keystream_fast(key, len(data), rule=rule)
     return bytes(a ^ b for a, b in zip(data, keystream))
 
 # 测试
@@ -114,12 +195,36 @@ def selftest() -> bool:
     ks2 = ca_keystream(key2, 64)
     diff_ok = ks1a != ks2
 
+    # 位并行版本必须与原实现产出完全一致 (覆盖多条规则)
+    import time as _t
+    parity_ok = True
+    for rule in (30, 90, 110, 150, 45, 0, 255):
+        a = ca_keystream(key1, 256, rule=rule)
+        b = ca_keystream_fast(key1, 256, rule=rule)
+        if a != b:
+            parity_ok = False
+            print(f"  规则 {rule} 下位并行结果与原实现不一致!")
+            break
+
+    # 简单基准: 生成 8KB 密钥流, 对比两条路径
+    N = 8192
+    t0 = _t.perf_counter()
+    ca_keystream(key1, N)
+    t_slow = _t.perf_counter() - t0
+    t0 = _t.perf_counter()
+    ca_keystream_fast(key1, N)
+    t_fast = _t.perf_counter() - t0
+    speedup = t_slow / t_fast if t_fast > 0 else float("inf")
+
     print("CA 流密码自检:")
     print(f"加解密往返一致      : {'PASS' if round_ok else 'FAIL'}")
     print(f"同密钥密钥流确定    : {'PASS' if deter_ok else 'FAIL'}")
     print(f"不同密钥密钥流不同  : {'PASS' if diff_ok else 'FAIL'}")
+    print(f"位并行与原实现等价  : {'PASS' if parity_ok else 'FAIL'}")
+    print(f"基准({N} 字节)      : 原={t_slow*1000:.1f}ms  快速={t_fast*1000:.1f}ms  "
+          f"加速 x{speedup:.1f}")
 
-    ok = round_ok and deter_ok and diff_ok
+    ok = round_ok and deter_ok and diff_ok and parity_ok
     print("自检通过 ✓" if ok else "自检失败 ✗")
     return ok
 

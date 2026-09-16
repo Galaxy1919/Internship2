@@ -26,6 +26,7 @@ call npm run dev
 goto :eof
 
 :fail
+
 echo.
 echo [ERROR] npm install failed. Please check network or run manually:
 echo     cd web
